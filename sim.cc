@@ -223,7 +223,7 @@ void run_tests()
   size_t n = s.common("NUM_AGENTS");
   s.init({advanceTimeEvent, deathEvent});
   TESTEQ(t, s.agents.size(), n, "number of agents before simulation");
-  s.simulate();
+  s.simulate_once();
   TESTEQ(t, s.agents.size(), n, "number of agents after simulation");
   TESTDBL(t, s.current_date,
 	  (s.common("START_DATE") +
@@ -307,7 +307,6 @@ sim::time_correct_prob(const double parameter_prob,
 		       const double actual_time_period)
 {
 
-  // 1-(1-p)^t;
   double t = actual_time_period / parameter_time_period;
   double not_p = 1 - parameter_prob;
   double not_p_corrected = pow(not_p, t);

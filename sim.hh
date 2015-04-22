@@ -91,22 +91,22 @@ namespace sim {
       set_if_not_set("PROB_CIRCUMCISED", { 0.2 });
       set_if_not_set("NUM_SIMULATIONS", { 1.0 });
     }
-    double operator()(const char * c, size_t i)
+    double operator()(const char * key, size_t i)
     {
-      try {
-	auto p = parameters.at(c);
+      if (parameters.find(key) == parameters.end()) {
+	std::stringstream ss;
+	ss << "Unknown parameter: " << key << std::endl;
+	throw InvalidParameter(ss.str());
+      } else {
+	auto p = parameters.at(key);
 	if (i >= p.size())  {
 	  std::stringstream ss;
 	  ss << "Index " << i << " out of range for parameter "
-	     << c << std::endl;
+	     << key << std::endl;
 	  throw  InvalidParameter(ss.str());
 	} else {
 	  return p[i];
 	}
-      } catch (const std::out_of_range& e) {
-	std::stringstream ss;
-	ss << "Unknown parameter: " << c << std::endl;
-	throw InvalidParameter(ss.str());
       }
     }
     double operator()(const char * c)
@@ -215,6 +215,8 @@ namespace sim {
     parameters_to_time_adjust;
   };
 
+  void process_command_line(Common &common, int argc, char *argv[]);
+
   class Agent
   {
   public:
@@ -263,6 +265,7 @@ namespace sim {
     {
       time_step = common("TIME_STEP");
       current_date = common("START_DATE");
+      total_iterations = common("ITERATIONS");
       events = e;
       for (unsigned i = 0; i < common("NUM_AGENTS"); ++i) {
 	Agent *a = new Agent(common, agent_initiation_func);
@@ -296,10 +299,29 @@ namespace sim {
 	  move_agent(agents, dead_agents, i);
     }
 
-    void simulate()
+    void
+    simulate(Events events,
+	     std::function<void(Simulation &)> report,
+	     int argc = 0,
+	     char *argv[] = NULL)
     {
-      unsigned iterations = common("ITERATIONS");
-      for (iteration = 0; iteration < iterations; ++iteration)
+      if (argc)
+	process_command_line(common, argc, argv);
+      common.set_defaults_not_yet_set();
+      common.adjust_parameters_to_time_period();
+      for (simulation_num = 0;
+	   simulation_num < common("NUM_SIMULATIONS");
+	   ++simulation_num) {
+	init(events);
+	simulate_once();
+	report(*this);
+      }
+    }
+
+    void simulate_once()
+    {
+      for (current_iteration = 0; current_iteration < total_iterations;
+	   ++current_iteration)
 	for (auto event : events)
 	  event(*this);
     }
@@ -308,10 +330,10 @@ namespace sim {
     std::vector<Agent *> dead_agents;
     Events events;
     double current_date, time_step;
-    unsigned iteration;
+    unsigned simulation_num = 0, current_iteration, total_iterations;
     Common &common;
   };
-  void process_command_line(Common &common, int argc, char *argv[]);
+
   void advanceTimeEvent(Simulation &simulation);
   void deathEvent(Simulation &simulation);
 }
