@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <thread>
 
 #include "sim.hh"
 #include "test.hh"
@@ -19,7 +20,7 @@
 using namespace sim;
 
 namespace sim {
-  std::mt19937 rng;
+  thread_local std::mt19937 rng;
 }
 
 //////////////////////////////
@@ -166,12 +167,11 @@ process_command_line_parameters(Common& common, const char *parameter_str)
 
 void run_tests()
 {
-  Common c;
-  Simulation s(c);
+  Simulation s;
   tst::TestSeries t;
 
   process_parameter_file(s.common, "test_csv.csv");
-  c.set_defaults_not_yet_set();
+  s.common.set_defaults_not_yet_set();
 
   TESTDBL(t, s.common("NEW_PARM", 0), 5.0, "parameter type added");
   TESTDBL(t, s.common("NEW_PARM", 1), 1.0, "multiple entries added");
@@ -271,33 +271,32 @@ void sim::process_command_line(Common &common, int argc, char *argv[])
   }
 }
 
-void sim::default_agent_initiation(Agent *a, Common &c)
+Agent::Agent(Common &c) : common_(c)
 {
   std::uniform_real_distribution<double> uni;
-  a->id = c.last_agent++;
-  a->alive = true;
-  a->sex = uni(rng) < c("PROB_MALE") ?
+  id = c.last_agent++;
+  alive = true;
+  sex = uni(rng) < c("PROB_MALE") ?
 		   MALE : FEMALE;
   { // dob
     std::uniform_real_distribution<double>
       uni_age(c("EARLIEST_BIRTH_DATE"),
 	      c("LATEST_BIRTH_DATE"));
-    a->dob = uni_age(rng);
+    dob = uni_age(rng);
   }
-  a->cd4 = 1000;
-  a->hiv = 0;
+  cd4 = 1000;
+  hiv = 0;
   for (int i = 0; i < 4; ++i) {
     if (uni(rng) < c("HIV_PREVALENCE_STAGE", i)) {
-      a->hiv = i;
+      hiv = i;
       break;
     }
   }
-  a->riskiness = uni(rng);
-  a->orientation = 1.0;
-  a->num_partners = 0;
+  riskiness = uni(rng);
+  orientation = 1.0;
+  num_partners = 0;
   if (uni(rng) < c("PROB_CIRCUMCISED"))
-    a->circumcised = true;
-
+    circumcised = true;
 }
 
 
@@ -325,4 +324,17 @@ void sim::Agent::die(Simulation &s, const std::string & c)
   alive = false;
   dod = s.current_date;
   cause = c;
+}
+
+Agent* sim::create_default_agent(Common & c)
+{
+  return new Agent(c);
+}
+
+void
+sim::Simulation::threaded_part_of_sim_loop()
+{
+  init(events_, simulation_num * 23 + 7, agent_create_func_);
+  simulate_once();
+  report_(*this);
 }

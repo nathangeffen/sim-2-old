@@ -1,5 +1,6 @@
 #include "sim.hh"
 
+
 void cd4Event(sim::Simulation &s)
 {
   static thread_local double avg_cd4_decline = s.common("AVG_CD4_DECLINE");
@@ -15,16 +16,17 @@ void cd4Event(sim::Simulation &s)
 
 void deathEvent(sim::Simulation &s)
 {
-  static thread_local std::vector<double> & male_mort =
+   std::vector<double> & male_mort =
     s.common.get("RISK_DEATH_MALE");
-  static thread_local std::vector<double> & female_mort=
+   std::vector<double> & female_mort=
     s.common.get("RISK_DEATH_FEMALE");
-  static thread_local std::vector<double> & hiv_mort =
+   std::vector<double> & hiv_mort =
     s.common.get("HIV_RISK_DEATH");
-  static thread_local size_t size = hiv_mort.size();
+   size_t size = hiv_mort.size();
 
   for (auto agent : s.agents) {
     unsigned age = agent->age(s);
+
     double risk_of_death;
 
     // Risk of death for everyone due to age
@@ -56,20 +58,21 @@ void report(sim::Simulation &s)
 {
   double prop_dead = (double) s.dead_agents.size() /
     (s.agents.size() + s.dead_agents.size());
-  std::cout << s.simulation_num << ", alive, " << s.agents.size() << std::endl;
-  std::cout << s.simulation_num << ", dead, "
-	    << s.dead_agents.size() << std::endl;
-  std::cout << s.simulation_num << ", proportion dead, "
-	    << prop_dead << std::endl;
+  std::stringstream ss;
+  ss << s.simulation_num << ", alive, " << s.agents.size() << std::endl;
+  ss << s.simulation_num << ", dead, "
+     << s.dead_agents.size() << std::endl;
+  ss << s.simulation_num << ", proportion dead, "
+     << prop_dead << std::endl;
+  std::cout << ss.str();
 }
 
 int main(int argc, char *argv[])
 {
-  sim::Common c;
-  sim::Simulation s(c);
+  sim::Simulation simulation;
 
-  s.simulate({sim::advanceTimeEvent, cd4Event, deathEvent}, report,
-	     argc, argv);
+  simulation.simulate({sim::advanceTimeEvent, cd4Event, deathEvent}, report,
+		      argc, argv);
 
   return 0;
 }

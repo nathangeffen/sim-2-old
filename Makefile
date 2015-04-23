@@ -4,8 +4,8 @@ CXX = g++
 # compiler flags:
 #  -g    adds debugging information to the executable file
 #  -Wall turns on most, but not all, compiler warnings
-CXXFLAGS  = -g -Wall -std=c++11
-RELFLAGS = -O3 -std=c++11
+CXXFLAGS  = -g -Wall -std=c++11 -pthread
+RELFLAGS = -O3 -std=c++11 -pthread
 
 # the build target executable:
 SOURCES = simple.cc sim.cc test.cc
