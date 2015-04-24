@@ -165,6 +165,23 @@ process_command_line_parameters(Common& common, const char *parameter_str)
   }
 }
 
+class Report {
+public:
+  Report(tst::TestSeries &test_series,
+	 size_t num_agents) : t_(test_series), n_(num_agents) {};
+  void operator()(sim::Simulation &s)
+  {
+    TESTEQ(t_, s.agents.size(), n_, "number of agents after simulation");
+    TESTDBL(t_, s.current_date,
+	    (s.common("START_DATE") +
+	     (s.common("ITERATIONS") * s.common("TIME_STEP"))),
+	    "end and start dates correspond to time steps");
+  }
+private:
+  tst::TestSeries &t_;
+  size_t n_;
+};
+
 void run_tests()
 {
   Simulation s;
@@ -221,14 +238,7 @@ void run_tests()
   }
 
   size_t n = s.common("NUM_AGENTS");
-  s.init({advanceTimeEvent, deathEvent});
-  TESTEQ(t, s.agents.size(), n, "number of agents before simulation");
-  s.simulate_once();
-  TESTEQ(t, s.agents.size(), n, "number of agents after simulation");
-  TESTDBL(t, s.current_date,
-	  (s.common("START_DATE") +
-	   (s.common("ITERATIONS") * s.common("TIME_STEP"))),
-	  "end and start dates correspond to time steps");
+  s.simulate({advanceTimeEvent, deathEvent}, Report(t, n));
   t.summary();
 }
 
@@ -329,12 +339,4 @@ void sim::Agent::die(Simulation &s, const std::string & c)
 Agent* sim::create_default_agent(Common & c)
 {
   return new Agent(c);
-}
-
-void
-sim::Simulation::threaded_part_of_sim_loop()
-{
-  init(events_, simulation_num * 23 + 7, agent_create_func_);
-  simulate_once();
-  report_(*this);
 }

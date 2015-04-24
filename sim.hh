@@ -30,7 +30,7 @@ namespace sim {
   const double WEEK = 1.0 / 52.0;
   const double DAY = 1.0 / 365.25;
 
-  // TO DO: Sort out multithreading seeding
+
   extern thread_local std::mt19937 rng;
 
   bool is_event(const double risk);
@@ -94,6 +94,7 @@ namespace sim {
       set_if_not_set("HIV_PREVALENCE", { 0.19 });
       set_if_not_set("PROB_CIRCUMCISED", { 0.2 });
       set_if_not_set("NUM_SIMULATIONS", { 1.0 });
+      set_if_not_set("SIMULATIONS_PER_THREAD", { 10.0 });
     }
     double operator()(const char * key, size_t i)
     {
@@ -245,6 +246,8 @@ namespace sim {
 
   Agent* create_default_agent(Common & c);
 
+  void threaded_part_of_sim_loop(Simulation & simulation,
+				 size_t from, size_t to);
 
   class Simulation
   {
@@ -259,22 +262,31 @@ namespace sim {
       for (auto a : aged_out_agents)
 	delete a;
     }
+
+    friend void
+    threaded_part_of_sim_loop(Simulation & simulation, size_t from, size_t to)
+    {
+      for (size_t i = from; i < to; ++i) {
+	Simulation s = simulation;
+	s.simulation_num = i;
+	s.init(i * 23 + 7);
+	s.simulate_once();
+	s.report_(s);
+      }
+    }
+
     void set_common(Common &c)
     {
       common = c;
     }
-    void init(Events e,
-	      unsigned seed = 0,
-	      std::function<Agent *(Common &)> agent_create_func =
-	      create_default_agent)
+    void init(unsigned seed = 0)
     {
       rng.seed(seed);
       time_step = common("TIME_STEP");
       current_date = common("START_DATE");
       total_iterations = common("ITERATIONS");
-      events = e;
       for (unsigned i = 0; i < common("NUM_AGENTS"); ++i) {
-	Agent *a = agent_create_func(common);
+	Agent *a = agent_create_func_(common);
 	agents.push_back(a);
       }
     }
@@ -314,58 +326,57 @@ namespace sim {
 	     create_default_agent)
     {
       std::vector<std::thread> threads;
-      std::vector<Simulation *> simulations;
+      size_t sim_per_thread, num_sims, num_threads;
+
+      events_ = events;
+      report_ = report;
+      agent_create_func_ = agent_create_func;
 
       if (argc)
 	process_command_line(common, argc, argv);
+
       common.set_defaults_not_yet_set();
       common.adjust_parameters_to_time_period();
-      for (simulation_num = 0;
-	   simulation_num < common("NUM_SIMULATIONS");
-	   ++simulation_num) {
-	simulations.push_back(new Simulation());
-	simulations[simulation_num]->simulation_num = simulation_num;
-	simulations[simulation_num]->events_ = events;
-	simulations[simulation_num]->agent_create_func_ = agent_create_func;
-	simulations[simulation_num]->report_ = report;
-	simulations[simulation_num]->set_common(common);
-	// simulations[simulation_num]->init(events,
-	// 				  simulation_num * 23 + 7,
-	// 				  agent_create_func);
-	// simulations[simulation_num]->simulate_once();
-	// simulations[simulation_num]->report_(*simulations[simulation_num]);
-	threads.push_back(std::thread(&Simulation::threaded_part_of_sim_loop,
-				      std::ref(*simulations[simulation_num])));
+
+      sim_per_thread = common("SIMULATIONS_PER_THREAD");
+      num_sims = common("NUM_SIMULATIONS");
+      num_threads = ceil((double) num_sims / sim_per_thread );
+
+      for (size_t i = 0; i < num_threads; ++i) {
+	size_t from = i * sim_per_thread;
+	size_t to = std::min((i + 1) * sim_per_thread, num_sims);
+	threads.push_back(std::thread(threaded_part_of_sim_loop,
+				      std::ref(*this), from, to));
+
       }
+
       for (auto & t : threads)
       	t.join();
-      for (auto s : simulations)
-	delete s;
-    }
+      }
 
     void simulate_once()
     {
       for (current_iteration = 0; current_iteration < total_iterations;
 	   ++current_iteration)
-	for (auto event : events)
+	for (auto event : events_)
 	  event(*this);
     }
     std::vector<Agent *> agents;
     std::vector<Agent *> aged_out_agents;
     std::vector<Agent *> dead_agents;
-    Events events;
     double current_date, time_step;
     unsigned simulation_num = 0, current_iteration, total_iterations;
     Common common;
+
   private:
     Events events_;
     std::function<void(Simulation &)> report_;
     std::function<Agent *(Common &)> agent_create_func_;
-    void threaded_part_of_sim_loop();
   };
 
   void advanceTimeEvent(Simulation &simulation);
   void deathEvent(Simulation &simulation);
+
 }
 
 #endif
