@@ -95,6 +95,7 @@ namespace sim {
       set_if_not_set("PROB_CIRCUMCISED", { 0.2 });
       set_if_not_set("NUM_SIMULATIONS", { 1.0 });
       set_if_not_set("SIMULATIONS_PER_THREAD", { 10.0 });
+      set_if_not_set("THREADED", { 1.0 });
     }
     double operator()(const char * key, size_t i)
     {
@@ -346,11 +347,7 @@ namespace sim {
 	     std::function<void(Common &)> pre_process_func = NULL)
     {
       std::vector<std::thread> threads;
-      size_t num_sims;
-#ifdef NOTHREADS
-#else
-      size_t sim_per_thread, num_threads;
-#endif
+      size_t num_sims, sim_per_thread, num_threads;
       events_ = events;
       report_ = report;
       agent_create_func_ = agent_create_func;
@@ -363,23 +360,22 @@ namespace sim {
       common.adjust_parameters_to_time_period();
 
       num_sims = common("NUM_SIMULATIONS");
-#ifdef NOTHREADS
-      threaded_part_of_sim_loop(*this, 0, num_sims);
-#else
-      sim_per_thread = common("SIMULATIONS_PER_THREAD");
 
-      num_threads = ceil((double) num_sims / sim_per_thread );
+      if (common("THREADED")) {
+	sim_per_thread = common("SIMULATIONS_PER_THREAD");
+	num_threads = ceil((double) num_sims / sim_per_thread );
+	for (size_t i = 0; i < num_threads; ++i) {
+	  size_t from = i * sim_per_thread;
+	  size_t to = std::min((i + 1) * sim_per_thread, num_sims);
+	  threads.push_back(std::thread(threaded_part_of_sim_loop,
+					std::ref(*this), from, to));
 
-      for (size_t i = 0; i < num_threads; ++i) {
-	size_t from = i * sim_per_thread;
-	size_t to = std::min((i + 1) * sim_per_thread, num_sims);
-	threads.push_back(std::thread(threaded_part_of_sim_loop,
-				      std::ref(*this), from, to));
-
+	}
+     	for (auto & t : threads)
+	  t.join();
+      } else {
+	threaded_part_of_sim_loop(*this, 0, num_sims);
       }
-      for (auto & t : threads)
-      	t.join();
-#endif
     }
 
 

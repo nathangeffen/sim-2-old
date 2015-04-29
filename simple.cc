@@ -1,6 +1,5 @@
 #include "sim.hh"
 
-
 void cd4Event(sim::Simulation &s)
 {
   static thread_local double avg_cd4_decline = s.common("AVG_CD4_DECLINE");
@@ -12,7 +11,6 @@ void cd4Event(sim::Simulation &s)
     }
   }
 }
-
 
 void deathEvent(sim::Simulation &s)
 {
@@ -52,7 +50,6 @@ void deathEvent(sim::Simulation &s)
   }
   s.remove_dead_agents();
 }
-
 
 void report(sim::Simulation &s)
 {
