@@ -270,16 +270,21 @@ namespace sim {
 	Simulation s = simulation;
 	s.simulation_num = i;
 	s.init(i * 23 + 7);
+	if (s.pre_process_func_)
+	  s.pre_process_func_(s.common);
 	s.simulate_once();
 	s.report_(s);
       }
     }
 
-    void set_common(Common &c)
+    void
+    set_common(Common &c)
     {
       common = c;
     }
-    void init(unsigned seed = 0)
+
+    void
+    init(unsigned seed = 0)
     {
       rng.seed(seed);
       time_step = common("TIME_STEP");
@@ -290,6 +295,20 @@ namespace sim {
 	agents.push_back(a);
       }
     }
+
+    void
+    init(unsigned seed,
+	 Events events,
+	 std::function<void(Simulation &)> report,
+	 std::function<Agent *(Common &)>,
+	 std::function<Agent *(Common &)> agent_create_func)
+    {
+      events_ = events;
+      report_ = report;
+      agent_create_func_ = agent_create_func;
+      init(seed);
+    }
+
 
     double
     time_correct_prob(const double parameter_prob,
@@ -323,14 +342,19 @@ namespace sim {
 	     int argc = 0,
 	     char *argv[] = NULL,
 	     std::function<Agent *(Common &)> agent_create_func =
-	     create_default_agent)
+	     create_default_agent,
+	     std::function<void(Common &)> pre_process_func = NULL)
     {
       std::vector<std::thread> threads;
-      size_t sim_per_thread, num_sims, num_threads;
-
+      size_t num_sims;
+#ifdef NOTHREADS
+#else
+      size_t sim_per_thread, num_threads;
+#endif
       events_ = events;
       report_ = report;
       agent_create_func_ = agent_create_func;
+      pre_process_func_ = pre_process_func;
 
       if (argc)
 	process_command_line(common, argc, argv);
@@ -338,8 +362,12 @@ namespace sim {
       common.set_defaults_not_yet_set();
       common.adjust_parameters_to_time_period();
 
-      sim_per_thread = common("SIMULATIONS_PER_THREAD");
       num_sims = common("NUM_SIMULATIONS");
+#ifdef NOTHREADS
+      threaded_part_of_sim_loop(*this, 0, num_sims);
+#else
+      sim_per_thread = common("SIMULATIONS_PER_THREAD");
+
       num_threads = ceil((double) num_sims / sim_per_thread );
 
       for (size_t i = 0; i < num_threads; ++i) {
@@ -349,10 +377,11 @@ namespace sim {
 				      std::ref(*this), from, to));
 
       }
-
       for (auto & t : threads)
       	t.join();
-      }
+#endif
+    }
+
 
     void simulate_once()
     {
@@ -372,6 +401,7 @@ namespace sim {
     Events events_;
     std::function<void(Simulation &)> report_;
     std::function<Agent *(Common &)> agent_create_func_;
+    std::function<void(Common &)> pre_process_func_;
   };
 
   void advanceTimeEvent(Simulation &simulation);
