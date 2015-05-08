@@ -21,7 +21,7 @@
 
 namespace sim {
 
-  class Common;
+  class Context;
   class Agent;
   class Simulation;
 
@@ -83,7 +83,7 @@ namespace sim {
     TimeAdjustMethod method;
   };
 
-  class Common {
+  class Context {
   public:
     void set_defaults_not_yet_set()
     {
@@ -258,11 +258,11 @@ namespace sim {
     parameters_to_time_adjust;
   };
 
-  void process_command_line(Common &common, int argc, char *argv[]);
+  void process_command_line(Context &context, int argc, char *argv[]);
   class Agent
   {
   public:
-    Agent(Common &common);
+    Agent(Context &context);
     double age(Simulation &s);
     void die(Simulation &s, const std::string& cause);
     unsigned id;
@@ -279,10 +279,10 @@ namespace sim {
     unsigned num_partners;
     std::vector<unsigned> partners;
   private:
-    Common &common_;
+    Context &context_;
   };
 
-  Agent* create_default_agent(Common & c);
+  Agent* create_default_agent(Context & c);
 
   void threaded_part_of_sim_loop(Simulation & simulation,
 				 size_t from, size_t to);
@@ -309,27 +309,27 @@ namespace sim {
 	s.simulation_num = i;
 	s.init(i * 23 + 7);
 	if (s.pre_process_func_)
-	  s.pre_process_func_(s.common);
+	  s.pre_process_func_(s.context);
 	s.simulate_once();
 	s.report_(s);
       }
     }
 
     void
-    set_common(Common &c)
+    set_context(Context &c)
     {
-      common = c;
+      context = c;
     }
 
     void
     init(unsigned seed = 0)
     {
       rng.seed(seed);
-      time_step = common("TIME_STEP");
-      current_date = common("START_DATE");
-      total_iterations = common("ITERATIONS");
-      for (unsigned i = 0; i < common("NUM_AGENTS"); ++i) {
-	Agent *a = agent_create_func_(common);
+      time_step = context("TIME_STEP");
+      current_date = context("START_DATE");
+      total_iterations = context("ITERATIONS");
+      for (unsigned i = 0; i < context("NUM_AGENTS"); ++i) {
+	Agent *a = agent_create_func_(context);
 	agents.push_back(a);
       }
     }
@@ -338,8 +338,8 @@ namespace sim {
     init(unsigned seed,
 	 Events events,
 	 std::function<void(Simulation &)> report,
-	 std::function<Agent *(Common &)>,
-	 std::function<Agent *(Common &)> agent_create_func)
+	 std::function<Agent *(Context &)>,
+	 std::function<Agent *(Context &)> agent_create_func)
     {
       events_ = events;
       report_ = report;
@@ -379,9 +379,9 @@ namespace sim {
 	     std::function<void(Simulation &)> report,
 	     int argc = 0,
 	     char *argv[] = NULL,
-	     std::function<Agent *(Common &)> agent_create_func =
+	     std::function<Agent *(Context &)> agent_create_func =
 	     create_default_agent,
-	     std::function<void(Common &)> pre_process_func = NULL)
+	     std::function<void(Context &)> pre_process_func = NULL)
     {
       std::vector<std::thread> threads;
       size_t num_sims, sim_per_thread, num_threads;
@@ -391,15 +391,15 @@ namespace sim {
       pre_process_func_ = pre_process_func;
 
       if (argc)
-	process_command_line(common, argc, argv);
+	process_command_line(context, argc, argv);
 
-      common.set_defaults_not_yet_set();
-      common.adjust_parameters_to_time_period();
+      context.set_defaults_not_yet_set();
+      context.adjust_parameters_to_time_period();
 
-      num_sims = common("NUM_SIMULATIONS");
+      num_sims = context("NUM_SIMULATIONS");
 
-      if (common("THREADED")) {
-	sim_per_thread = common("SIMULATIONS_PER_THREAD");
+      if (context("THREADED")) {
+	sim_per_thread = context("SIMULATIONS_PER_THREAD");
 	num_threads = ceil((double) num_sims / sim_per_thread );
 	for (size_t i = 0; i < num_threads; ++i) {
 	  size_t from = i * sim_per_thread;
@@ -428,13 +428,13 @@ namespace sim {
     std::vector<Agent *> dead_agents;
     double current_date, time_step;
     unsigned simulation_num = 0, current_iteration, total_iterations;
-    Common common;
+    Context context;
 
   private:
     Events events_;
     std::function<void(Simulation &)> report_;
-    std::function<Agent *(Common &)> agent_create_func_;
-    std::function<void(Common &)> pre_process_func_;
+    std::function<Agent *(Context &)> agent_create_func_;
+    std::function<void(Context &)> pre_process_func_;
   };
 
   void advanceTimeEvent(Simulation &simulation);

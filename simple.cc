@@ -2,7 +2,7 @@
 
 void cd4Event(sim::Simulation &s)
 {
-  static thread_local double avg_cd4_decline = s.common("AVG_CD4_DECLINE");
+  static thread_local double avg_cd4_decline = s.context("AVG_CD4_DECLINE");
   for (auto agent : s.agents)
     if (agent->hiv)
       agent->cd4 = std::max(0.0, agent->cd4 - avg_cd4_decline);
@@ -19,11 +19,11 @@ void deathEvent(sim::Simulation &s)
   double risk_of_death, hiv_risk_of_death;
   unsigned age;
   std::vector<double> & male_mort =
-    s.common.get("RISK_DEATH_MALE");
+    s.context.get("RISK_DEATH_MALE");
   std::vector<double> & female_mort=
-    s.common.get("RISK_DEATH_FEMALE");
+    s.context.get("RISK_DEATH_FEMALE");
   std::vector<double> & hiv_mort =
-    s.common.get("HIV_RISK_DEATH");
+    s.context.get("HIV_RISK_DEATH");
 
   for (auto agent : s.agents) {
     age = agent->age(s);
