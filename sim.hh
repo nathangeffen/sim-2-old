@@ -271,13 +271,6 @@ namespace sim {
     double dod;
     std::string cause;
     Sex sex;
-    int hiv;
-    double cd4;
-    bool circumcised;
-    double orientation;
-    double riskiness;
-    unsigned num_partners;
-    std::vector<unsigned> partners;
   private:
     Context &context_;
   };
@@ -308,9 +301,11 @@ namespace sim {
 	Simulation s = simulation;
 	s.simulation_num = i;
 	s.init(i * 23 + 7);
-	if (s.pre_process_func_)
-	  s.pre_process_func_(s.context);
+	if (s.before_each_simulation_func_)
+	  s.before_each_simulation_func_(s);
 	s.simulate_once();
+	if (s.after_each_simulation_func_)
+	  s.after_each_simulation_func_(s);
 	s.report_(s);
       }
     }
@@ -328,6 +323,8 @@ namespace sim {
       time_step = context("TIME_STEP");
       current_date = context("START_DATE");
       total_iterations = context("ITERATIONS");
+      if (create_all_agents_func_)
+	create_all_agents_func_(*this);
       for (unsigned i = 0; i < context("NUM_AGENTS"); ++i) {
 	Agent *a = agent_create_func_(context);
 	agents.push_back(a);
@@ -338,12 +335,13 @@ namespace sim {
     init(unsigned seed,
 	 Events events,
 	 std::function<void(Simulation &)> report,
-	 std::function<Agent *(Context &)>,
-	 std::function<Agent *(Context &)> agent_create_func)
+	 std::function<Agent *(Context &)> agent_create_func,
+	 std::function<void *(Simulation &)> create_all_agents_func)
     {
       events_ = events;
       report_ = report;
       agent_create_func_ = agent_create_func;
+      create_all_agents_func_ = create_all_agents_func;
       init(seed);
     }
 
@@ -381,14 +379,29 @@ namespace sim {
 	     char *argv[] = NULL,
 	     std::function<Agent *(Context &)> agent_create_func =
 	     create_default_agent,
-	     std::function<void(Context &)> pre_process_func = NULL)
+	     std::function<void *(Simulation &)> create_all_agents_func = NULL,
+	     std::function<void(Simulation &)> before_all_simulations_func =
+	     NULL,
+	     std::function<void(Simulation &)> before_each_simulation_func =
+	     NULL,
+	     std::function<void(Simulation &)> after_each_simulation_func = NULL)
     {
       std::vector<std::thread> threads;
       size_t num_sims, sim_per_thread, num_threads;
       events_ = events;
       report_ = report;
       agent_create_func_ = agent_create_func;
-      pre_process_func_ = pre_process_func;
+      create_all_agents_func_ = create_all_agents_func_;
+
+      if (agent_create_func_ != NULL && create_all_agents_func_ != NULL)
+	std::cerr << "Warning: You should set one of agent_create_func and "
+		  << "create_all_agents_func parameters to NULL."
+		  << "The create_all_agents_func by default will be the one "
+		  << "that gets executed" << std::endl;
+
+
+      before_each_simulation_func_ = before_each_simulation_func;
+      after_each_simulation_func_ = after_each_simulation_func;
 
       if (argc)
 	process_command_line(context, argc, argv);
@@ -398,6 +411,9 @@ namespace sim {
 
       num_sims = context("NUM_SIMULATIONS");
 
+      if (before_all_simulations_func)
+	before_all_simulations_func(*this);
+
       if (context("THREADED")) {
 	sim_per_thread = context("SIMULATIONS_PER_THREAD");
 	num_threads = ceil((double) num_sims / sim_per_thread );
@@ -406,7 +422,6 @@ namespace sim {
 	  size_t to = std::min((i + 1) * sim_per_thread, num_sims);
 	  threads.push_back(std::thread(threaded_part_of_sim_loop,
 					std::ref(*this), from, to));
-
 	}
      	for (auto & t : threads)
 	  t.join();
@@ -434,12 +449,37 @@ namespace sim {
     Events events_;
     std::function<void(Simulation &)> report_;
     std::function<Agent *(Context &)> agent_create_func_;
-    std::function<void(Context &)> pre_process_func_;
+    std::function<void(Simulation &)> before_each_simulation_func_;
+    std::function<void(Simulation &)> after_each_simulation_func_;
+    std::function<void *(Simulation &)> create_all_agents_func_;
   };
 
   void advanceTimeEvent(Simulation &simulation);
   void deathEvent(Simulation &simulation);
 
+  class HIVAgent : public Agent {
+  public:
+    HIVAgent(Context &c);
+    friend std::ostream& operator<<(std::ostream& os, const HIVAgent& agent)
+    {
+      os << " ID: " << agent.id << " Birth: " << agent.dob
+	 << " Death: " << agent.dod
+	 << " HIV: " << agent.hiv << " HIV infection date: "
+	 << agent.hiv_infection_date << " CD4: " << agent.cd4;
+      return os;
+    }
+
+    int hiv;
+    double hiv_infection_date;
+    double cd4;
+    bool circumcised;
+    double orientation;
+    double riskiness;
+    unsigned num_partners;
+    std::vector<unsigned> partners;
+  };
+  HIVAgent *create_hiv_agent(Context &c);
 }
+
 
 #endif

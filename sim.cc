@@ -287,27 +287,10 @@ Agent::Agent(Context &c) : context_(c)
   std::uniform_real_distribution<double> uni;
   id = c.last_agent++;
   alive = true;
-  sex = uni(rng) < c("PROB_MALE") ?
-		   MALE : FEMALE;
-  { // dob
-    std::uniform_real_distribution<double>
-      uni_age(c("EARLIEST_BIRTH_DATE"),
-	      c("LATEST_BIRTH_DATE"));
-    dob = uni_age(rng);
-  }
-  cd4 = 1000;
-  hiv = 0;
-  for (int i = 0; i < 4; ++i) {
-    if (uni(rng) < c("HIV_PREVALENCE_STAGE", i)) {
-      hiv = i;
-      break;
-    }
-  }
-  riskiness = uni(rng);
-  orientation = 1.0;
-  num_partners = 0;
-  if (uni(rng) < c("PROB_CIRCUMCISED"))
-    circumcised = true;
+}
+
+HIVAgent::HIVAgent(Context &c) : Agent(c)
+{
 }
 
 double
@@ -347,5 +330,47 @@ void sim::Agent::die(Simulation &s, const std::string & c)
 
 Agent* sim::create_default_agent(Context & c)
 {
-  return new Agent(c);
+  std::uniform_real_distribution<double> uni;
+  Agent *a  = new Agent(c);
+
+  a->sex = uni(rng) < c("PROB_MALE") ?
+		      MALE : FEMALE;
+  { // dob
+    std::uniform_real_distribution<double>
+      uni_age(c("EARLIEST_BIRTH_DATE"),
+	      c("LATEST_BIRTH_DATE"));
+    a->dob = uni_age(rng);
+  }
+  return a;
+}
+
+HIVAgent *sim::create_hiv_agent(Context &c)
+{
+  std::uniform_real_distribution<double> uni;
+  HIVAgent *a = new HIVAgent(c);
+  a->sex = uni(rng) < c("PROB_MALE") ?
+		      MALE : FEMALE;
+  { // dob
+    std::uniform_real_distribution<double>
+      uni_age(c("EARLIEST_BIRTH_DATE"),
+	      c("LATEST_BIRTH_DATE"));
+    a->dob = uni_age(rng);
+  }
+
+  a->cd4 = 1000;
+  a->hiv = 0;
+  if (uni(rng) < c("HIV_PREVALENCE")) {
+    a->hiv = 1.0;
+    std::uniform_real_distribution<double>
+      uni_age(c("EARLIEST_BIRTH_DATE"),
+	      c("LATEST_BIRTH_DATE"));
+  }
+  a->riskiness = uni(rng);
+  a->orientation = 1.0;
+  a->num_partners = 0;
+
+  if (uni(rng) < c("PROB_CIRCUMCISED"))
+    a->circumcised = true;
+
+  return a;
 }
