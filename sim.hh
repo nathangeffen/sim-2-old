@@ -30,12 +30,21 @@ namespace sim {
   const double WEEK = 1.0 / 52.0;
   const double DAY = 1.0 / 365.25;
 
-
   extern thread_local std::mt19937 rng;
 
   bool is_event(const double risk);
 
   typedef std::vector< std::function<void(Simulation &)> > Events;
+
+  enum TimeAdjustMethod {
+    PROBABILITY = 0,
+    LINEAR = 1
+  };
+
+  double
+  time_correct_linear(const double parameter_prob,
+		      const double parameter_time_period,
+		      const double actual_time_period);
 
   double
   time_correct_prob(const double parameter_prob,
@@ -71,6 +80,7 @@ namespace sim {
     double time_period;
     size_t from;
     size_t step;
+    TimeAdjustMethod method;
   };
 
   class Common {
@@ -166,10 +176,12 @@ namespace sim {
     set_time_adjust(const std::string & parameter,
 		    double time_period,
 		    size_t from = 0.0,
-		    size_t step = 0.0)
+		    size_t step = 0.0,
+		    TimeAdjustMethod method = PROBABILITY)
     {
       parameters_to_time_adjust[parameter] =
-	std::tuple<double,size_t, size_t>(time_period, from, step);
+	std::tuple<double,size_t, size_t, TimeAdjustMethod>
+	(time_period, from, step, method);
     }
     TimeAdjust get_time_adjust(const char * s)
     {
@@ -178,12 +190,14 @@ namespace sim {
       output.time_period = std::get<0>(t);
       output.from = std::get<1>(t);
       output.step = std::get<2>(t);
+      output.method = std::get<3>(t);
       return output;
     }
     double get_time_adjust(std::string & s)
     {
       return std::get<0>(parameters_to_time_adjust[s]);
     }
+
     void
     convert_probabilities_to_time_period(const char * key,
 					 double parameter_time_period,
@@ -196,13 +210,35 @@ namespace sim {
 	*it = time_correct_prob(*it, parameter_time_period, actual_time_period);
     }
 
+
+    void
+    convert_linear_values_to_time_period(const char * key,
+					 double parameter_time_period,
+					 size_t start = 0,
+					 size_t step = 1)
+    {
+      double actual_time_period = (*this)("TIME_STEP");
+      std::vector<double> & values = get(key);
+      for (auto it = values.begin() + start; it < values.end(); it += step)
+	*it = time_correct_linear(*it, parameter_time_period,
+				  actual_time_period);
+    }
+
+
     void adjust_parameters_to_time_period()
     {
-      for (auto entry : parameters_to_time_adjust)
-	convert_probabilities_to_time_period(entry.first.c_str(),
-					     std::get<0>(entry.second),
-					     std::get<1>(entry.second),
-					     std::get<2>(entry.second));
+      for (auto entry : parameters_to_time_adjust) {
+	if (std::get<3>(entry.second) == PROBABILITY)
+	  convert_probabilities_to_time_period(entry.first.c_str(),
+					       std::get<0>(entry.second),
+					       std::get<1>(entry.second),
+					       std::get<2>(entry.second));
+	else
+	  convert_linear_values_to_time_period(entry.first.c_str(),
+					       std::get<0>(entry.second),
+					       std::get<1>(entry.second),
+					       std::get<2>(entry.second));
+      }
     }
 
     void print_parameters()
@@ -217,7 +253,8 @@ namespace sim {
     unsigned last_agent = 0;
   private:
     std::unordered_map<std::string, std::vector<double> > parameters;
-    std::unordered_map<std::string, std::tuple<double, size_t, size_t> >
+    std::unordered_map<std::string,
+		       std::tuple<double, size_t, size_t, TimeAdjustMethod> >
     parameters_to_time_adjust;
   };
 

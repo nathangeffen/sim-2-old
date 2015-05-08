@@ -108,11 +108,12 @@ process_parameter_file(Common& common, const char * parameter_file_name)
     std::vector<double> values;
     if ( line.size() > 1 ) {
       for (auto it = line.begin() + 1; it != line.end(); ++it) {
-	if ((*it)[0] == '!') {
+	if ((*it)[0] == '!' || (*it)[0] == '^') {
 	  // 01234567
 	  // !1.0!0!2
 	  double time_period = 1.0;
 	  size_t from = 0, step = 1;
+	  TimeAdjustMethod method = ((*it)[0] == '!') ? PROBABILITY : LINEAR;
 	  size_t index1 = (*it).find('!', 1), index2 = std::string::npos;
 	  if (index1 != std::string::npos) {
 	    time_period = std::stod((*it).substr(1, index1 - 1));
@@ -126,7 +127,7 @@ process_parameter_file(Common& common, const char * parameter_file_name)
 	  } else {
 	    time_period = std::stod((*it).substr(1));
 	  }
-	  common.set_time_adjust(line[0], time_period, from, step);
+	  common.set_time_adjust(line[0], time_period, from, step, method);
 	} else {
 	  values.push_back(std::stod(*it));
 	}
@@ -307,6 +308,14 @@ Agent::Agent(Common &c) : common_(c)
   num_partners = 0;
   if (uni(rng) < c("PROB_CIRCUMCISED"))
     circumcised = true;
+}
+
+double
+sim::time_correct_linear(const double parameter_prob,
+			 const double parameter_time_period,
+			 const double actual_time_period)
+{
+  return parameter_prob * actual_time_period / parameter_time_period;
 }
 
 

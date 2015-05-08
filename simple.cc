@@ -3,48 +3,71 @@
 void cd4Event(sim::Simulation &s)
 {
   static thread_local double avg_cd4_decline = s.common("AVG_CD4_DECLINE");
-  for (auto agent : s.agents) {
-    if (agent->hiv) {
-      agent->cd4 = std::max(0.0,
-			    agent->cd4 -
-			    avg_cd4_decline * s.time_step);
-    }
-  }
+  for (auto agent : s.agents)
+    if (agent->hiv)
+      agent->cd4 = std::max(0.0, agent->cd4 - avg_cd4_decline);
+}
+
+void hivEvent(sim::Simulation &s)
+{
+
+  return;
 }
 
 void deathEvent(sim::Simulation &s)
 {
-   std::vector<double> & male_mort =
+  double risk_of_death, hiv_risk_of_death;
+  unsigned age;
+  std::vector<double> & male_mort =
     s.common.get("RISK_DEATH_MALE");
-   std::vector<double> & female_mort=
+  std::vector<double> & female_mort=
     s.common.get("RISK_DEATH_FEMALE");
-   std::vector<double> & hiv_mort =
+  std::vector<double> & hiv_mort =
     s.common.get("HIV_RISK_DEATH");
-   size_t size = hiv_mort.size();
 
   for (auto agent : s.agents) {
-    unsigned age = agent->age(s);
-
-    double risk_of_death;
-
-    // Risk of death for everyone due to age
+    age = agent->age(s);
+    // Risk of death for HIV- due to age
     if (agent->sex == sim::MALE)
       risk_of_death = male_mort[age];
     else
       risk_of_death = female_mort[age];
-    if (sim::is_event(risk_of_death))
-      agent->die(s, "AGE");
-
+    if (agent->hiv == 0) {
+      if (sim::is_event(risk_of_death))
+	agent->die(s, "AGE");
+    } else  {
     // HIV risk of death
-    if (agent->alive && agent->hiv) {
-      for (size_t i = size; i > 0; i -= 2) {
-	if (agent->cd4 < hiv_mort[i - 2]) {
-	  double hiv_risk_of_death = hiv_mort[i - 1];
-	  if (sim::is_event(hiv_risk_of_death)) {
-	    agent->die(s, "HIV");
-	    break;
-	  }
-	}
+      size_t index;
+      if (age < 5.0)
+	index = 0;
+      else if (age < 15.0)
+	index = 6;
+      else if (age < 25.0)
+	index = 12;
+      else if (age < 35.0)
+	index = 18;
+      else if (age < 45.0)
+	index = 24;
+      else if (age < 55.0)
+	index = 30;
+      else
+	index = 36;
+      if (agent->cd4 < 50.0)
+	;
+      else if (agent->cd4 < 100.0)
+	++index;
+      else if (agent->cd4 < 200.0)
+	index += 2;
+      else if (agent->cd4 < 350.0)
+	index += 3;
+      else if (agent->cd4 < 500.0)
+	index += 4;
+      else
+	index += 5;
+      hiv_risk_of_death = std::max(hiv_mort[index], risk_of_death);
+      if (sim::is_event(hiv_risk_of_death)) {
+	agent->die(s, "HIV");
+	break;
       }
     }
   }
@@ -68,8 +91,12 @@ int main(int argc, char *argv[])
 {
   sim::Simulation simulation;
 
-  simulation.simulate({sim::advanceTimeEvent, cd4Event, deathEvent}, report,
-		      argc, argv);
+  simulation.simulate({
+      sim::advanceTimeEvent,
+	cd4Event,
+	hivEvent,
+	deathEvent},
+    report, argc, argv);
 
   return 0;
 }
