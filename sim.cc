@@ -288,7 +288,7 @@ void sim::process_command_line(Context &context, int argc, char *argv[])
 Agent::Agent(Context &c) : context_(c)
 {
   std::uniform_real_distribution<double> uni;
-  id = c.last_agent++;
+  id = context_.last_agent++;
   alive = true;
 }
 
