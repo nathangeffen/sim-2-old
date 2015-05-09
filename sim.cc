@@ -84,10 +84,10 @@ get_csv_table(const char *parameter_file_name)
       std::istringstream line_stream(line);
       std::vector<std::string> cells;
       while ( std::getline(line_stream, cell, ',') )
-	if ( cell.size() && cell[0] != '#' )
+	if (cell[0] == '#')
+	  break;
+	else if (cell.size())
 	  cells.push_back(cell);
-	else
-      	  break;
       csv_table.push_back(cells);
     }
     infile.close();
@@ -239,7 +239,10 @@ void run_tests()
   }
 
   size_t n = s.context("NUM_AGENTS");
-  s.simulate({advanceTimeEvent, deathEvent}, Report(t, n));
+  s.setOptions(Options()
+	       .events({advanceTimeEvent, deathEvent})
+	       .afterEachSimulation(Report(t, n)));
+  s.simulate();
   t.summary();
 }
 

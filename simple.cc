@@ -250,16 +250,15 @@ void report(sim::Simulation &s)
 }
 
 
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
-  sim::Simulation simulation;
-
-  simulation.simulate({
-      sim::advanceTimeEvent,
-	cd4Event,
-	hivEvent,
-	deathEvent},
-    report, argc, argv, create_hiv_agent_simple);
-
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, cd4Event
+			, hivEvent
+			, deathEvent})
+		  .afterEachSimulation(report)
+		  .commandLine(argc, argv)
+		  .agentCreate(create_hiv_agent_simple)).simulate();
   return 0;
 }

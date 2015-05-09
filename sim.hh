@@ -54,6 +54,8 @@ namespace sim {
   time_correct_prob(const double parameter_prob,
 		    const double parameter_time_period);
 
+  void advanceTimeEvent(Simulation &simulation);
+  void deathEvent(Simulation &simulation);
 
   enum Sex {
     MALE = 0,
@@ -258,7 +260,7 @@ namespace sim {
     parameters_to_time_adjust;
   };
 
-  void process_command_line(Context &context, int argc, char *argv[]);
+  void process_command_line(Context &context, int argc, char **argv);
   class Agent
   {
   public:
@@ -280,10 +282,79 @@ namespace sim {
   void threaded_part_of_sim_loop(Simulation & simulation,
 				 size_t from, size_t to);
 
+  class Options {
+  public:
+    Options();
+    Options& events(Events events);
+    Options& commandLine(int argc, char **argv);
+    Options& agentCreate(std::function<Agent *(Context &)>
+			 individual_agent_create_func);
+    Options& allAgentsCreate(std::function<void *(Simulation &)>
+			     all_agents_create_func);
+    Options& beforeAllSimulations(std::function<void(Simulation &)>
+				  before_all_simulations_func);
+    Options& beforeEachSimulation(std::function<void(Simulation &)>
+				  before_each_simulation_func);
+    Options& afterEachSimulation(std::function<void(Simulation &)>
+				 after_each_simulation_func);
+  private:
+    friend class Simulation;
+    Events events_;
+    int argc_;
+    char **argv_;
+    std::function<Agent *(Context &)> individual_agent_create_func_;
+    std::function<void *(Simulation &)> all_agents_create_func_;
+    std::function<void(Simulation &)> before_all_simulations_func_;
+    std::function<void(Simulation &)>  before_each_simulation_func_;
+    std::function<void(Simulation &)> after_each_simulation_func_;
+  };
+  inline Options::Options()
+    : events_({advanceTimeEvent})
+    , argc_(0)
+    , argv_(NULL)
+    , individual_agent_create_func_(create_default_agent)
+    , all_agents_create_func_(NULL)
+    , before_all_simulations_func_(NULL)
+    , before_each_simulation_func_(NULL)
+    , after_each_simulation_func_(NULL)
+    {}
+  inline Options&
+  Options::events(Events events)
+  { events_ = events; return *this; }
+  inline Options&
+  Options::commandLine(int argc, char **argv)
+  { argc_ = argc; argv_ = argv; return *this; }
+  inline Options&
+  Options::agentCreate(std::function<Agent *(Context &)>
+		       individual_agent_create_func)
+  { individual_agent_create_func_ = individual_agent_create_func; return *this; }
+  inline Options&
+  Options::allAgentsCreate(std::function<void *(Simulation &)>
+			   all_agents_create_func)
+  { all_agents_create_func_ = all_agents_create_func; return *this; }
+  inline Options&
+  Options::beforeAllSimulations(std::function<void(Simulation &)>
+				before_all_simulations_func)
+  {
+    before_all_simulations_func_ = before_all_simulations_func;
+    return *this;
+  }
+  inline Options&
+  Options::afterEachSimulation(std::function<void(Simulation &)>
+			       after_each_simulation_func)
+  {
+    after_each_simulation_func_ = after_each_simulation_func;
+    return *this;
+  }
+
   class Simulation
   {
   public:
     Simulation() {}
+    Simulation(const Options & options)
+    {
+      setOptions(options);
+    }
     ~Simulation()
     {
       for (auto a : agents)
@@ -292,6 +363,18 @@ namespace sim {
 	delete a;
       for (auto a : aged_out_agents)
 	delete a;
+    }
+
+    void setOptions(const Options & options)
+    {
+      events_ = options.events_;
+      argc_ = options.argc_;
+      argv_ = options.argv_;
+      agent_create_func_ = options.individual_agent_create_func_;
+      create_all_agents_func_ = options.all_agents_create_func_;
+      before_all_simulations_func_ = options.before_all_simulations_func_;
+      before_each_simulation_func_ = options.before_each_simulation_func_;
+      after_each_simulation_func_ = options.after_each_simulation_func_;
     }
 
     friend void
@@ -306,7 +389,6 @@ namespace sim {
 	s.simulate_once();
 	if (s.after_each_simulation_func_)
 	  s.after_each_simulation_func_(s);
-	s.report_(s);
       }
     }
 
@@ -334,12 +416,10 @@ namespace sim {
     void
     init(unsigned seed,
 	 Events events,
-	 std::function<void(Simulation &)> report,
 	 std::function<Agent *(Context &)> agent_create_func,
 	 std::function<void *(Simulation &)> create_all_agents_func)
     {
       events_ = events;
-      report_ = report;
       agent_create_func_ = agent_create_func;
       create_all_agents_func_ = create_all_agents_func;
       init(seed);
@@ -373,46 +453,21 @@ namespace sim {
     }
 
     void
-    simulate(Events events,
-	     std::function<void(Simulation &)> report,
-	     int argc = 0,
-	     char *argv[] = NULL,
-	     std::function<Agent *(Context &)> agent_create_func =
-	     create_default_agent,
-	     std::function<void *(Simulation &)> create_all_agents_func = NULL,
-	     std::function<void(Simulation &)> before_all_simulations_func =
-	     NULL,
-	     std::function<void(Simulation &)> before_each_simulation_func =
-	     NULL,
-	     std::function<void(Simulation &)> after_each_simulation_func = NULL)
+    simulate()
     {
       std::vector<std::thread> threads;
       size_t num_sims, sim_per_thread, num_threads;
-      events_ = events;
-      report_ = report;
-      agent_create_func_ = agent_create_func;
-      create_all_agents_func_ = create_all_agents_func_;
 
-      if (agent_create_func_ != NULL && create_all_agents_func_ != NULL)
-	std::cerr << "Warning: You should set one of agent_create_func and "
-		  << "create_all_agents_func parameters to NULL."
-		  << "The create_all_agents_func by default will be the one "
-		  << "that gets executed" << std::endl;
-
-
-      before_each_simulation_func_ = before_each_simulation_func;
-      after_each_simulation_func_ = after_each_simulation_func;
-
-      if (argc)
-	process_command_line(context, argc, argv);
+      if (argc_)
+	process_command_line(context, argc_, argv_);
 
       context.set_defaults_not_yet_set();
       context.adjust_parameters_to_time_period();
 
       num_sims = context("NUM_SIMULATIONS");
 
-      if (before_all_simulations_func)
-	before_all_simulations_func(*this);
+      if (before_all_simulations_func_)
+	before_all_simulations_func_(*this);
 
       if (context("THREADED")) {
 	sim_per_thread = context("SIMULATIONS_PER_THREAD");
@@ -447,15 +502,14 @@ namespace sim {
 
   private:
     Events events_;
-    std::function<void(Simulation &)> report_;
+    int argc_;
+    char **argv_;
     std::function<Agent *(Context &)> agent_create_func_;
+    std::function<void *(Simulation &)> create_all_agents_func_;
+    std::function<void(Simulation &)> before_all_simulations_func_;
     std::function<void(Simulation &)> before_each_simulation_func_;
     std::function<void(Simulation &)> after_each_simulation_func_;
-    std::function<void *(Simulation &)> create_all_agents_func_;
   };
-
-  void advanceTimeEvent(Simulation &simulation);
-  void deathEvent(Simulation &simulation);
 
   class HIVAgent : public Agent {
   public:
