@@ -80,7 +80,6 @@ void hivEvent(sim::Simulation &s)
       }
     }
   }
-  return;
 }
 
 void deathEvent(sim::Simulation &s)
@@ -157,6 +156,25 @@ void print_agents(sim::Simulation &s)
   }
 }
 
+double calcPrevalence(sim::Simulation &s)
+{
+  unsigned num_hiv_pos = 0;
+
+  for (auto a : s.agents) {
+    sim::HIVAgent *agent = (sim::HIVAgent *) a;
+    if (agent->hiv)
+      ++num_hiv_pos;
+  }
+  return (double) num_hiv_pos / s.agents.size();
+}
+
+void interimReport(sim::Simulation &s)
+{
+  std::stringstream ss;
+  ss << s.simulation_num << ", " << s.current_iteration
+     << ", HIV prevalence, " << calcPrevalence(s) << std::endl;
+  std::cout << ss.str();
+}
 
 void report(sim::Simulation &s)
 {
@@ -256,7 +274,8 @@ int main(int argc, char **argv)
 		  .events({sim::advanceTimeEvent
 			, cd4Event
 			, hivEvent
-			, deathEvent})
+			, deathEvent
+			, interimReport})
 		  .afterEachSimulation(report)
 		  .commandLine(argc, argv)
 		  .agentCreate(create_hiv_agent_simple)).simulate();
