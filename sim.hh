@@ -19,6 +19,8 @@
 #include <vector>
 #include <unordered_map>
 
+#include "test.hh"
+
 namespace sim {
 
   class Context;
@@ -35,16 +37,24 @@ namespace sim {
   bool is_event(const double risk);
 
   typedef std::vector< std::function<void(Simulation &)> > Events;
+  typedef std::vector< std::function<void(tst::TestSeries &,
+					  Simulation &)> > Tests;
 
   enum TimeAdjustMethod {
     PROBABILITY = 0,
-    LINEAR = 1
+    LINEAR = 1,
+    COMPOUND = 2
   };
 
   double
   time_correct_linear(const double parameter_prob,
 		      const double parameter_time_period,
 		      const double actual_time_period);
+
+  double
+  time_correct_compound(const double parameter_prob,
+			const double parameter_time_period,
+			const double actual_time_period);
 
   double
   time_correct_prob(const double parameter_prob,
@@ -226,6 +236,18 @@ namespace sim {
 				  actual_time_period);
     }
 
+    void
+    convert_compound_product_to_time_period(const char * key,
+					    double parameter_time_period,
+					    size_t start = 0,
+					    size_t step = 1)
+    {
+      double actual_time_period = (*this)("TIME_STEP");
+      std::vector<double> & values = get(key);
+      for (auto it = values.begin() + start; it < values.end(); it += step)
+	*it = time_correct_compound(*it, parameter_time_period,
+				    actual_time_period);
+    }
 
     void adjust_parameters_to_time_period()
     {
@@ -235,11 +257,16 @@ namespace sim {
 					       std::get<0>(entry.second),
 					       std::get<1>(entry.second),
 					       std::get<2>(entry.second));
-	else
+	else if (std::get<3>(entry.second) == LINEAR)
 	  convert_linear_values_to_time_period(entry.first.c_str(),
 					       std::get<0>(entry.second),
 					       std::get<1>(entry.second),
 					       std::get<2>(entry.second));
+	else
+	  convert_compound_product_to_time_period(entry.first.c_str(),
+						  std::get<0>(entry.second),
+						  std::get<1>(entry.second),
+						  std::get<2>(entry.second));
       }
     }
 
@@ -253,6 +280,7 @@ namespace sim {
       }
     }
     unsigned last_agent = 0;
+    void *user_data = NULL;
   private:
     std::unordered_map<std::string, std::vector<double> > parameters;
     std::unordered_map<std::string,
@@ -286,6 +314,7 @@ namespace sim {
   public:
     Options();
     Options& events(Events events);
+    Options& additionalTests(Tests tests);
     Options& commandLine(int argc, char **argv);
     Options& agentCreate(std::function<Agent *(Context &)>
 			 individual_agent_create_func);
@@ -300,6 +329,7 @@ namespace sim {
   private:
     friend class Simulation;
     Events events_;
+    Tests tests_;
     int argc_;
     char **argv_;
     std::function<Agent *(Context &)> individual_agent_create_func_;
@@ -310,6 +340,7 @@ namespace sim {
   };
   inline Options::Options()
     : events_({advanceTimeEvent})
+    , tests_({})
     , argc_(0)
     , argv_(NULL)
     , individual_agent_create_func_(create_default_agent)
@@ -321,9 +352,15 @@ namespace sim {
   inline Options&
   Options::events(Events events)
   { events_ = events; return *this; }
+
+  inline Options&
+  Options::additionalTests(Tests tests)
+  { tests_ = tests; return *this; }
+
   inline Options&
   Options::commandLine(int argc, char **argv)
   { argc_ = argc; argv_ = argv; return *this; }
+
   inline Options&
   Options::agentCreate(std::function<Agent *(Context &)>
 		       individual_agent_create_func)
@@ -368,6 +405,7 @@ namespace sim {
     void setOptions(const Options & options)
     {
       events_ = options.events_;
+      tests_ = options.tests_;
       argc_ = options.argc_;
       argv_ = options.argv_;
       agent_create_func_ = options.individual_agent_create_func_;
@@ -493,15 +531,21 @@ namespace sim {
 	for (auto event : events_)
 	  event(*this);
     }
+    void run_tests(tst::TestSeries &t)
+    {
+      for (auto test_func : tests_)
+	test_func(t, *this);
+    }
     std::vector<Agent *> agents;
     std::vector<Agent *> aged_out_agents;
     std::vector<Agent *> dead_agents;
     double current_date, time_step;
     unsigned simulation_num = 0, current_iteration, total_iterations;
     Context context;
-
+    void *user_data = NULL;
   private:
     Events events_;
+    Tests tests_;
     int argc_;
     char **argv_;
     std::function<Agent *(Context &)> agent_create_func_;
@@ -534,6 +578,5 @@ namespace sim {
   };
   HIVAgent *create_hiv_agent(Context &c);
 }
-
 
 #endif

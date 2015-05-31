@@ -15,7 +15,7 @@
 #include <thread>
 
 #include "sim.hh"
-#include "test.hh"
+
 
 using namespace sim;
 
@@ -108,12 +108,17 @@ process_parameter_file(Context& context, const char * parameter_file_name)
     std::vector<double> values;
     if ( line.size() > 1 ) {
       for (auto it = line.begin() + 1; it != line.end(); ++it) {
-	if ((*it)[0] == '!' || (*it)[0] == '^') {
+	if ((*it)[0] == '!' || (*it)[0] == '^' || (*it)[0] == '&') {
 	  // 01234567
 	  // !1.0!0!2
 	  double time_period = 1.0;
 	  size_t from = 0, step = 1;
-	  TimeAdjustMethod method = ((*it)[0] == '!') ? PROBABILITY : LINEAR;
+	  TimeAdjustMethod method;
+	  switch ((*it)[0]) {
+	  case '!': method = LINEAR; break;
+	  case '&' : method = PROBABILITY; break;
+	  case '^' : method = COMPOUND; break;
+	  }
 	  size_t index1 = (*it).find('!', 1), index2 = std::string::npos;
 	  if (index1 != std::string::npos) {
 	    time_period = std::stod((*it).substr(1, index1 - 1));
@@ -243,6 +248,9 @@ void run_tests()
 	       .events({advanceTimeEvent, deathEvent})
 	       .afterEachSimulation(Report(t, n)));
   s.simulate();
+
+  s.run_tests(t);
+
   t.summary();
 }
 
@@ -302,6 +310,16 @@ sim::time_correct_linear(const double parameter_prob,
 			 const double actual_time_period)
 {
   return parameter_prob * actual_time_period / parameter_time_period;
+}
+
+double
+sim::time_correct_compound(const double parameter_prob,
+			   const double parameter_time_period,
+			   const double actual_time_period)
+{
+  double n = actual_time_period / parameter_time_period;
+  double t = pow(parameter_prob, n);
+  return t;
 }
 
 

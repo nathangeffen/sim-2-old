@@ -1,4 +1,4 @@
 #,Parameters for agent based model implementation of Granich et al. model,
 INITIAL_AGE,,15
-BETA,!1,0.02
+BETA,^1,0.02
 BETA_STDEV,,0
