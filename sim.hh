@@ -37,8 +37,7 @@ namespace sim {
   bool is_event(const double risk);
 
   typedef std::vector< std::function<void(Simulation &)> > Events;
-  typedef std::vector< std::function<void(tst::TestSeries &,
-					  Simulation &)> > Tests;
+  typedef std::vector< std::function<void(tst::TestSeries &)> > Tests;
 
   enum TimeAdjustMethod {
     PROBABILITY = 0,
@@ -187,8 +186,8 @@ namespace sim {
     void
     set_time_adjust(const std::string & parameter,
 		    double time_period,
-		    size_t from = 0.0,
-		    size_t step = 0.0,
+		    size_t from = 0,
+		    size_t step = 1,
 		    TimeAdjustMethod method = PROBABILITY)
     {
       parameters_to_time_adjust[parameter] =
@@ -288,7 +287,10 @@ namespace sim {
     parameters_to_time_adjust;
   };
 
-  void process_command_line(Context &context, int argc, char **argv);
+  void process_command_line(Context &context,
+			    int argc,
+			    char **argv,
+			    const Tests & tests);
   class Agent
   {
   public:
@@ -326,6 +328,13 @@ namespace sim {
 				  before_each_simulation_func);
     Options& afterEachSimulation(std::function<void(Simulation &)>
 				 after_each_simulation_func);
+    Options& parameter(const char * parameter,
+		       const std::vector<double> & values);
+    Options& timeAdjust(const std::string & parameter,
+			double time_period,
+			size_t from = 0,
+			size_t step = 1,
+			TimeAdjustMethod method = PROBABILITY);
   private:
     friend class Simulation;
     Events events_;
@@ -337,6 +346,7 @@ namespace sim {
     std::function<void(Simulation &)> before_all_simulations_func_;
     std::function<void(Simulation &)>  before_each_simulation_func_;
     std::function<void(Simulation &)> after_each_simulation_func_;
+    Context context_;
   };
   inline Options::Options()
     : events_({advanceTimeEvent})
@@ -383,7 +393,23 @@ namespace sim {
     after_each_simulation_func_ = after_each_simulation_func;
     return *this;
   }
-
+  inline Options&
+  Options::parameter(const char *parameter,
+		     const std::vector<double> & values)
+  {
+    context_.set(parameter, values);
+    return *this;
+  }
+  inline Options&
+  Options::timeAdjust(const std::string & parameter,
+		      double time_period,
+		      size_t from,
+		      size_t step,
+		      TimeAdjustMethod method)
+  {
+    context_.set_time_adjust(parameter, time_period, from, step, method);
+    return *this;
+  }
   class Simulation
   {
   public:
@@ -413,6 +439,7 @@ namespace sim {
       before_all_simulations_func_ = options.before_all_simulations_func_;
       before_each_simulation_func_ = options.before_each_simulation_func_;
       after_each_simulation_func_ = options.after_each_simulation_func_;
+      context = options.context_;
     }
 
     friend void
@@ -428,12 +455,6 @@ namespace sim {
 	if (s.after_each_simulation_func_)
 	  s.after_each_simulation_func_(s);
       }
-    }
-
-    void
-    set_context(Context &c)
-    {
-      context = c;
     }
 
     void
@@ -490,6 +511,11 @@ namespace sim {
 	  move_agent(agents, dead_agents, i);
     }
 
+    inline void shuffle_agents()
+    {
+      shuffle(agents.begin(), agents.end(), rng);
+    }
+
     void
     simulate()
     {
@@ -497,7 +523,7 @@ namespace sim {
       size_t num_sims, sim_per_thread, num_threads;
 
       if (argc_)
-	process_command_line(context, argc_, argv_);
+	process_command_line(context, argc_, argv_, tests_);
 
       context.set_defaults_not_yet_set();
       context.adjust_parameters_to_time_period();
@@ -530,11 +556,6 @@ namespace sim {
 	   ++current_iteration)
 	for (auto event : events_)
 	  event(*this);
-    }
-    void run_tests(tst::TestSeries &t)
-    {
-      for (auto test_func : tests_)
-	test_func(t, *this);
     }
     std::vector<Agent *> agents;
     std::vector<Agent *> aged_out_agents;

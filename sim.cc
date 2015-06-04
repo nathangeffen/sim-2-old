@@ -188,7 +188,7 @@ private:
   size_t n_;
 };
 
-void run_tests()
+void run_tests(const Tests & user_tests)
 {
   Simulation s;
   tst::TestSeries t;
@@ -249,13 +249,18 @@ void run_tests()
 	       .afterEachSimulation(Report(t, n)));
   s.simulate();
 
-  s.run_tests(t);
+  for (auto test_func : user_tests)
+    test_func(t);
 
   t.summary();
 }
 
 
-void sim::process_command_line(Context &context, int argc, char *argv[])
+void
+sim::process_command_line(Context &context,
+			  int argc,
+			  char *argv[],
+			  const Tests& user_tests)
 {
   // Command line options
   bool test = cmdOptionExists(argv, argv + argc, "-t");
@@ -265,7 +270,7 @@ void sim::process_command_line(Context &context, int argc, char *argv[])
   char *parameter_str = getCmdOption(argv, argv + argc, "-p");
 
   if (test)
-    run_tests();
+    run_tests(user_tests);
 
   if (parameter_file_str)
     process_parameter_file(context, parameter_file_str);
@@ -313,12 +318,12 @@ sim::time_correct_linear(const double parameter_prob,
 }
 
 double
-sim::time_correct_compound(const double parameter_prob,
+sim::time_correct_compound(const double parameter_value,
 			   const double parameter_time_period,
 			   const double actual_time_period)
 {
-  double n = actual_time_period / parameter_time_period;
-  double t = pow(parameter_prob, n);
+  double k = actual_time_period / parameter_time_period;
+  double t = pow(parameter_value, k);
   return t;
 }
 
