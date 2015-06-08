@@ -10,6 +10,8 @@ class StiAgent : public sim::Agent {
 public:
   StiAgent(sim::Context &c) : sim::Agent(c) {};
   Status status;
+  double date_last_child = 0.0;
+  double moved_out = 0.0;
 };
 
 StiAgent *createStiAgent(sim::Context &c)
@@ -35,7 +37,7 @@ StiAgent *createStiAgent(sim::Context &c)
   return a;
 }
 
-void increasePopulation(sim::Simulation &s)
+void increasePopulationDeterministicEvent(sim::Simulation &s)
 {
   std::uniform_real_distribution<double> uni;
   unsigned num_agents_to_create;
@@ -66,7 +68,31 @@ void increasePopulation(sim::Simulation &s)
   }
 }
 
-void emigration(sim::Simulation &s)
+void increasePopulationStochasticEvent(sim::Simulation &s)
+{
+  double growth_rate = s.context("GROWTH_STOCHASTIC");
+  double initial_age = s.context("INITIAL_AGE");
+  size_t num_agents = s.agents.size();
+
+  for (size_t i = 0; i < num_agents; ++i) {
+    auto sti_agent = (StiAgent *) s.agents[i];
+    if (s.current_date - sti_agent->date_last_child > 1.0) {
+      if (sim::is_event(growth_rate)) {
+	sti_agent->date_last_child = s.current_date;
+	StiAgent *a = new StiAgent(s.context);
+	a->sex = sim::is_event(s.context("PROB_MALE")) ?
+	  sim::MALE : sim::FEMALE;
+	a->dob = s.current_date - initial_age;
+	a->status = SUSCEPTIBLE;
+	s.agents.push_back(a);
+      }
+    }
+  }
+}
+
+
+
+void emigrationDeterministicEvent(sim::Simulation &s)
 {
   std::uniform_real_distribution<double> uni;
   unsigned num_agents_to_remove;
@@ -100,6 +126,23 @@ void emigration(sim::Simulation &s)
   for (unsigned i = 0; i < num_agents_to_remove; ++i) {
     s.aged_out_agents.push_back(s.agents.back());
     s.agents.pop_back();
+  }
+}
+
+void emigrationStochasticEvent(sim::Simulation &s)
+{
+  double decline_rate = s.context("DECLINE_STOCHASTIC");
+
+  for (auto & agent : s.agents) {
+    auto sti_agent = (StiAgent *) agent;
+    if (sim::is_event(decline_rate)) {
+      sti_agent->moved_out = s.current_date;
+    }
+  }
+  for (size_t i = 0; i < s.agents.size(); ++i) {
+    auto sti_agent = (StiAgent *) s.agents[i];
+    if (sti_agent->moved_out)
+      s.move_agent(s.agents, s.aged_out_agents, i);
   }
 }
 
@@ -145,8 +188,16 @@ void report(sim::Simulation &s)
 void testSti(tst::TestSeries &t)
 {
 
+  auto rpt = [&t](sim::Simulation &s) {
+    std::stringstream ss;
+    ss << "agents, " << s.simulation_num << ", "
+    << s.current_date << ", " << s.agents.size() << std::endl;
+    std::cout << ss.str();
+  };
+
   sim::Simulation(sim::Options()
-		  .events({sim::advanceTimeEvent, increasePopulation})
+		  .events({sim::advanceTimeEvent
+			, increasePopulationDeterministicEvent})
 		  .afterEachSimulation([&t](sim::Simulation &s) {
 		      TESTEQ(t, s.agents.size(), 67274, "Population growth");
 		    })
@@ -159,7 +210,8 @@ void testSti(tst::TestSeries &t)
 		  .parameter("GROWTH_STDEV", {0.0} )
 		  .parameter("PREVALENCE", {0.0} )).simulate();
   sim::Simulation(sim::Options()
-  		  .events({sim::advanceTimeEvent, emigration})
+  		  .events({sim::advanceTimeEvent
+			, emigrationDeterministicEvent})
 		  .afterEachSimulation([&t](sim::Simulation &s) {
 		      TESTEQ(t, s.agents.size(), 423, "Population decline");
 		    })
@@ -172,13 +224,50 @@ void testSti(tst::TestSeries &t)
   		  .parameter("DECLINE", {0.9} )
   		  .parameter("DECLINE_STDEV", {0.0} )
    		  .parameter("PREVALENCE", {0.0} )).simulate();
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, increasePopulationStochasticEvent
+			})
+		  .afterEachSimulation([&t](sim::Simulation &s) {
+		      TEST(t, s.agents.size() > 6116 && s.agents.size() < 7400,
+			   "Stochastic growth");
+		    })
+		  .agentCreate(createStiAgent)
+		  .timeAdjust("GROWTH_STOCHASTIC", 1.0, 0, 1, sim::PROBABILITY)
+  		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("TIME_STEP", {0.5} )
+		  .parameter("NUM_YEARS", {20.0} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("GROWTH_STOCHASTIC", {0.1} )
+		  .parameter("PREVALENCE", {0.0} )).simulate();
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, emigrationStochasticEvent
+			})
+		  .afterEachSimulation([&t](sim::Simulation &s) {
+		      TEST(t, s.agents.size() > 109 && s.agents.size() < 135,
+			   "Stochastic decline");
+		    })
+		  .agentCreate(createStiAgent)
+		  .timeAdjust("DECLINE_STOCHASTIC", 1.0, 0, 1, sim::PROBABILITY)
+  		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("TIME_STEP", {0.1} )
+		  .parameter("NUM_SIMULATIONS", {1.0} )
+		  .parameter("NUM_YEARS", {20.0} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("DECLINE_STOCHASTIC", {0.1} )
+		  .parameter("PREVALENCE", {0.0} )).simulate();
 }
+
 
 int main(int argc, char **argv)
 {
   sim::Simulation(sim::Options()
 		  .additionalTests({testSti})
-		  .events({sim::advanceTimeEvent //, increasePopulation
+		  .events({sim::advanceTimeEvent
+			, increasePopulationDeterministicEvent
+			, emigrationDeterministicEvent
+			//, report
 			})
 		  .afterEachSimulation(report)
 		  .commandLine(argc, argv)
