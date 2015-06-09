@@ -1,8 +1,8 @@
-# Test csv file,,,,,
-HIV_PREVALENCE_STAGE,!1.0,0.2,0.1,0.3,0.2
-#,Another test,,,,
-START_DATE,1970,,,,
-TIME_STEP,0.0192307692,,,,
-PROB_CIRCUMCISED,0,0.5,,,
-NEW_PARM,5,1,,,
-HIV_RISK_DEATH,!1.25!1!2,500,0.01,400,0.02,350,0.03,200,0.4,50,0.6
+# Test csv file,,,,,,,,,,,
+HIV_PREVALENCE_STAGE,&1.0,0.2,0.1,0.3,0.2,,,,,,
+#,Another test,,,,,,,,,,
+START_DATE,1970,,,,,,,,,,
+TIME_STEP,0.0192307692,,,,,,,,,,
+PROB_CIRCUMCISED,0,0.5,,,,,,,,,
+NEW_PARM,5,1,,,,,,,,,
+HIV_RISK_DEATH,&1.25!1!2,500,0.01,400,0.02,350,0.03,200,0.4,50,0.6

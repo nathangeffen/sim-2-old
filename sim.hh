@@ -4,6 +4,10 @@
 #include <cassert>
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
+#include <execinfo.h>
+#include <cstdlib>
+#include <unistd.h>
 
 #include <array>
 #include <algorithm>
@@ -122,7 +126,15 @@ namespace sim {
     {
       if (parameters.find(key) == parameters.end()) {
 	std::stringstream ss;
+#ifdef __GNUC__
+#ifdef TRACING
 	ss << "Unknown parameter: " << key << std::endl;
+	void *array[20];
+	int size;	
+	size = backtrace(array, 20);
+	backtrace_symbols_fd(array, size, STDERR_FILENO);
+#endif
+#endif
 	throw InvalidParameter(ss.str());
       } else {
 	auto p = parameters.at(key);
@@ -312,6 +324,44 @@ namespace sim {
   void threaded_part_of_sim_loop(Simulation & simulation,
 				 size_t from, size_t to);
 
+  double numAgents(const Simulation &s);
+  double mean(const std::vector<double> & values);
+  double median(std::vector<double> & values);
+
+  class Reporter {   
+  public:
+    Reporter(std::function<double(const Simulation &)> getValueFunc,
+	     std::function<double(std::vector<double> &)> calcFunc,
+	     std::function<void(const double)> outputFunc) 
+    {
+      getValueFunc_ = getValueFunc;
+      calcFunc_ = calcFunc;
+      outputFunc_ = outputFunc;
+    }
+    inline void setSize(const size_t numVals)
+    {
+      values_.resize(numVals);
+    }
+    inline void getReportValue(const Simulation &s, size_t id)
+    {
+      values_[id] = getValueFunc_(s);      
+    }
+    inline void calculate() 
+    {
+      calcVal_ = calcFunc_(values_);      
+    }
+    inline void output()
+    {
+      outputFunc_(calcVal_);
+    }
+  private:
+    std::function<double(const Simulation &)> getValueFunc_;
+    std::function<double(std::vector<double> &)> calcFunc_;
+    std::function<void(const double)> outputFunc_;
+    std::vector< double > values_;    
+    double calcVal_;
+  };
+
   class Options {
   public:
     Options();
@@ -335,6 +385,9 @@ namespace sim {
 			size_t from = 0,
 			size_t step = 1,
 			TimeAdjustMethod method = PROBABILITY);
+    Options& report(std::function<double(const Simulation &)> getValueFunc,
+		    std::function<double(std::vector<double> &)> calcFunc,
+		    std::function<void(const double)> outputFunc);
   private:
     friend class Simulation;
     Events events_;
@@ -347,6 +400,7 @@ namespace sim {
     std::function<void(Simulation &)>  before_each_simulation_func_;
     std::function<void(Simulation &)> after_each_simulation_func_;
     Context context_;
+    std::vector<Reporter> reporters_;
   };
   inline Options::Options()
     : events_({advanceTimeEvent})
@@ -410,6 +464,15 @@ namespace sim {
     context_.set_time_adjust(parameter, time_period, from, step, method);
     return *this;
   }
+  inline Options& 
+  Options::report(std::function<double(const Simulation &)> getValueFunc,
+		  std::function<double(std::vector<double> &)> calcFunc,
+		  std::function<void(const double)> outputFunc)
+  {
+    reporters_.push_back(Reporter(getValueFunc, calcFunc, outputFunc));
+    return *this;
+  }
+
   class Simulation
   {
   public:
@@ -426,6 +489,10 @@ namespace sim {
 	delete a;
       for (auto a : aged_out_agents)
 	delete a;
+      if (simulation_num == 0 && reporters_) {
+	delete reporters_;
+	reporters_ = NULL;
+      }
     }
 
     void setOptions(const Options & options)
@@ -440,6 +507,11 @@ namespace sim {
       before_each_simulation_func_ = options.before_each_simulation_func_;
       after_each_simulation_func_ = options.after_each_simulation_func_;
       context = options.context_;
+      if (options.reporters_.size()) {
+	reporters_ = new std::vector<Reporter>;
+	for (auto & r : options.reporters_)
+	  reporters_->push_back(r);
+      }
     }
 
     friend void
@@ -447,13 +519,20 @@ namespace sim {
     {
       for (size_t i = from; i < to; ++i) {
 	Simulation s = simulation;
-	s.simulation_num = i;
+	// The +1 in next line of code is vital. The simulation parent needs to
+	// be identified by the destructor to free shared memory, and this is
+	// done by checking if simulation_num == 0. If +1 is left out,
+	// then two simulations will have simulation_num = 0.
+	s.simulation_num = i + 1; 
 	s.init(i * 23 + 7);
 	if (s.before_each_simulation_func_)
 	  s.before_each_simulation_func_(s);
 	s.simulate_once();
 	if (s.after_each_simulation_func_)
 	  s.after_each_simulation_func_(s);
+	if (s.reporters_)
+	  for (auto & r : *(s.reporters_)) 
+	    r.getReportValue(s, i);
       }
     }
 
@@ -533,6 +612,10 @@ namespace sim {
       if (before_all_simulations_func_)
 	before_all_simulations_func_(*this);
 
+      if (reporters_)
+	for (auto & r : *reporters_) 
+	  r.setSize(num_sims);
+      
       if (context("THREADED")) {
 	sim_per_thread = context("SIMULATIONS_PER_THREAD");
 	num_threads = ceil((double) num_sims / sim_per_thread );
@@ -547,6 +630,11 @@ namespace sim {
       } else {
 	threaded_part_of_sim_loop(*this, 0, num_sims);
       }
+      if (reporters_) 
+	for (auto & r : *reporters_) {
+	  r.calculate();
+	  r.output();
+	}
     }
 
 
@@ -569,6 +657,7 @@ namespace sim {
     Tests tests_;
     int argc_;
     char **argv_;
+    std::vector<Reporter> *reporters_ = NULL;
     std::function<Agent *(Context &)> agent_create_func_;
     std::function<void *(Simulation &)> create_all_agents_func_;
     std::function<void(Simulation &)> before_all_simulations_func_;

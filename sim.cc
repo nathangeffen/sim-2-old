@@ -193,6 +193,20 @@ void run_tests(const Tests & user_tests)
   Simulation s;
   tst::TestSeries t;
 
+  // Test auxiliary functions
+
+  {
+    std::vector<double> x = {};
+    TESTDBL(t, median(x), 0.0, "median of 0");
+    std::vector<double> a = {4.0, 3.0, 6.0};
+    TESTDBL(t, median(a), 4.0, "median of 3");
+    std::vector<double> b = {4.0, 3.0, 6.0, 5.0};
+    TESTDBL(t, median(b), 4.5, "median of 4");
+    std::vector<double> c = {3,4,4,5,5,4,3,7,6,9,6,8};
+    TESTDBL(t, median(c), 5.0, "median of 12");
+  }
+
+  // Test simulation
   process_parameter_file(s.context, "test_csv.csv");
   s.context.set_defaults_not_yet_set();
 
@@ -399,4 +413,42 @@ HIVAgent *sim::create_hiv_agent(Context &c)
     a->circumcised = true;
 
   return a;
+}
+
+double sim::numAgents(const Simulation &s)
+{
+  return (double) s.agents.size();
+}
+
+double sim::mean(const std::vector<double> & values)
+{
+  double total = 0.0;
+  for (auto & v : values) {
+    total += v;
+  }
+  return total / values.size();
+}
+
+double sim::median(std::vector<double> & values)
+{
+  double answer;
+  size_t middle;
+
+  if (values.size() == 0) 
+    return 0.0;
+
+  if (values.size() == 1)
+    return values[0];
+
+  middle = values.size() / 2;
+  nth_element(values.begin(), values.begin() + middle, values.end());
+  
+  if (values.size() % 2 == 0) {
+    answer = *(values.begin() + middle) + *max_element(values.begin(), 
+						       values.begin() + middle);
+    answer /= 2.0;
+  } else {
+    answer = *(values.begin() + middle);
+  }
+  return answer;
 }

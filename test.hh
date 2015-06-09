@@ -46,8 +46,8 @@ namespace tst {
 #define TESTCMP(test_series, ex1, cmp, ex2, desc) \
   if ( TEST(test_series, ex1 cmp ex2, desc) == false) {		\
     std::clog << # ex1 << " " << #cmp << " " << # ex2 << std::endl;	\
-      std::clog << std::fixed << (ex1) << " " << #cmp << " " \
-		<< std::fixed << (ex2) << std::endl;	\
+      std::clog << std::fixed << (ex1) << " " << #cmp << " "	\
+		<< std::fixed << (ex2) << std::endl;		\
   }
 
 #define TESTEQ(test_series, ex1, ex2, desc) \
@@ -57,6 +57,6 @@ namespace tst {
   TESTCMP(test_series, ex1, <, ex2, desc)
 
 #define TESTDBL(test_series, ex1, ex2, desc) \
-  TESTCMP(test_series, (ex1) - (ex2), < , 0.00000000000000000001, desc)
+  TESTCMP(test_series, fabs((ex1) - (ex2)), < , 0.000000001, desc)
 
 #endif
