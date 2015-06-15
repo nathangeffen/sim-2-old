@@ -10,8 +10,12 @@ class StiAgent : public sim::Agent {
 public:
   StiAgent(sim::Context &c) : sim::Agent(c) {};
   Status status;
+  std::vector<double> dates_infected;
   double date_last_child = 0.0;
   double moved_out = 0.0;
+  double risk_susceptible;
+  double risk_uninfectious;
+  double rate_partner_change;
 };
 
 StiAgent *createStiAgent(sim::Context &c)
@@ -26,6 +30,30 @@ StiAgent *createStiAgent(sim::Context &c)
       uni_age(c("EARLIEST_BIRTH_DATE"),
 	      c("LATEST_BIRTH_DATE"));
     a->dob = uni_age(sim::rng);
+  }
+
+  { // risk of infection with partner with STI, if susceptible
+    double risk_susceptible = c("RISK_SUSCEPTIBLE");
+    double risk_susceptible_stdev = c("RISK_SUSCEPTIBLE_STDEV");
+    std::normal_distribution<double> risk(risk_susceptible,
+					  risk_susceptible_stdev);
+    a->risk_susceptible = risk(sim::rng);
+  }
+
+  { // risk of infection with partner with STI, if uninfectious
+    double risk_uninfectious = c("RISK_UNINFECTIOUS");
+    double risk_uninfectious_stdev = c("RISK_UNINFECTIOUS_STDEV");
+    std::normal_distribution<double> risk(risk_uninfectious,
+					  risk_uninfectious_stdev);
+    a->risk_uninfectious = risk(sim::rng);
+  }
+
+  { // Rate of partner change
+    double rate_partner_change = c("RATE_PARTNER_CHANGE");
+    double rate_partner_change_stdev = c("RATE_PARTNER_CHANGE_STDEV");
+    std::normal_distribution<double> rate(rate_partner_change,
+					  rate_partner_change_stdev);
+    a->rate_partner_change = rate(sim::rng);
   }
 
   // Status
@@ -58,9 +86,7 @@ void increasePopulationDeterministicEvent(sim::Simulation &s)
     num_agents_to_create = std::floor(growth) - num_agents;
 
     for (unsigned i = 0; i < num_agents_to_create; ++i) {
-      StiAgent *a = new StiAgent(s.context);
-      a->sex = uni(sim::rng) < s.context("PROB_MALE") ?
-			       sim::MALE : sim::FEMALE;
+      StiAgent *a = createStiAgent(s.context);
       a->dob = s.current_date - initial_age;
       a->status = SUSCEPTIBLE;
       s.agents.push_back(a);
@@ -79,7 +105,7 @@ void increasePopulationStochasticEvent(sim::Simulation &s)
     if (s.current_date - sti_agent->date_last_child > 1.0) {
       if (sim::is_event(growth_rate)) {
 	sti_agent->date_last_child = s.current_date;
-	StiAgent *a = new StiAgent(s.context);
+	StiAgent *a = createStiAgent(s.context);
 	a->sex = sim::is_event(s.context("PROB_MALE")) ?
 	  sim::MALE : sim::FEMALE;
 	a->dob = s.current_date - initial_age;
@@ -146,6 +172,36 @@ void emigrationStochasticEvent(sim::Simulation &s)
   }
 }
 
+void becomeInfected(sim::Simulation &s)
+{
+  size_t I = 0; // infectious
+
+  for (auto &a : s.agents) {
+    StiAgent *agent = (StiAgent *) a;
+    if (agent->status == INFECTED)
+      ++I;
+  }
+
+  for (auto &a : s.agents) {
+    StiAgent *agent  = (StiAgent *) a;
+    if (agent->status == SUSCEPTIBLE) {
+      double risk_infection =
+	agent->risk_susceptible * (double) I / (double) s.agents.size();
+      if (sim::is_event(risk_infection)) {
+	agent->status = INFECTED;
+	agent->dates_infected.push_back(s.current_date);
+      }
+    } else if (agent->status == UNINFECTIOUS) {
+      double risk_infection =
+	agent->risk_uninfectious * (double) I / (double) s.agents.size();
+      if (sim::is_event(risk_infection)) {
+	agent->status = INFECTED;
+	agent->dates_infected.push_back(s.current_date);
+      }
+    }
+  }
+}
+
 
 void report(sim::Simulation &s)
 {
@@ -208,6 +264,12 @@ void testSti(tst::TestSeries &t)
 		  .parameter("INITIAL_AGE", {15.0} )
 		  .parameter("GROWTH", {1.1} )
 		  .parameter("GROWTH_STDEV", {0.0} )
+		  .parameter("RISK_SUSCEPTIBLE", {0.0} )
+		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
+		  .parameter("RATE_PARTNER_CHANGE", {0.0} )
+		  .parameter("RATE_PARTNER_CHANGE_STDEV", {0.0} )
 		  .parameter("PREVALENCE", {0.0} )).simulate();
 
   sim::Simulation(sim::Options()
@@ -224,6 +286,12 @@ void testSti(tst::TestSeries &t)
   		  .parameter("INITIAL_AGE", {15.0} )
   		  .parameter("DECLINE", {0.9} )
   		  .parameter("DECLINE_STDEV", {0.0} )
+		  .parameter("RISK_SUSCEPTIBLE", {0.0} )
+		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
+		  .parameter("RATE_PARTNER_CHANGE", {0.0} )
+		  .parameter("RATE_PARTNER_CHANGE_STDEV", {0.0} )
    		  .parameter("PREVALENCE", {0.0} )).simulate();
 
   sim::Simulation(sim::Options()
@@ -241,6 +309,12 @@ void testSti(tst::TestSeries &t)
 		  .parameter("NUM_YEARS", {20.0} )
 		  .parameter("INITIAL_AGE", {15.0} )
 		  .parameter("GROWTH_STOCHASTIC", {0.1} )
+		  .parameter("RISK_SUSCEPTIBLE", {0.0} )
+		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
+		  .parameter("RATE_PARTNER_CHANGE", {0.0} )
+		  .parameter("RATE_PARTNER_CHANGE_STDEV", {0.0} )
 		  .parameter("PREVALENCE", {0.0} )).simulate();
 
   sim::Simulation(sim::Options()
@@ -249,29 +323,29 @@ void testSti(tst::TestSeries &t)
 			})
 		  .agentCreate(createStiAgent)
 		  .timeAdjust("DECLINE_STOCHASTIC", 1.0, 0, 1, sim::PROBABILITY)
-		  .report(sim::numAgents, sim::mean, 
+		  .report(sim::numAgents, sim::mean,
 		  	  [&](const double value) {
 		  	    TEST(t, value > 109 && value < 135,
-				 "Stochastic decline mean");	
+				 "Stochastic decline mean");
 			  })
 		  .report(sim::numAgents, sim::median,
 		  	  [&](const double value) {
 		  	    TEST(t, value > 109 && value < 135,
 				 "Stochastic decline median");
 		  	  })
-		  .report(sim::numAgents, 
+		  .report(sim::numAgents,
 			  [](const std::vector<double> & values) {
-			    return *std::min_element(values.cbegin(), 
+			    return *std::min_element(values.cbegin(),
 						     values.cend());
-			  }, 
+			  },
 			  [&](const double value) {
 			    TEST(t, value < 120, "stochastic decline min");
 			  })
-		  .report(sim::numAgents, 
+		  .report(sim::numAgents,
 			  [](const std::vector<double> & values) {
-			    return *std::max_element(values.cbegin(), 
+			    return *std::max_element(values.cbegin(),
 						     values.cend());
-			  }, 
+			  },
 			  [&](const double value) {
 			    TEST(t, value > 130, "stochastic decline max");
 			  })
@@ -281,6 +355,12 @@ void testSti(tst::TestSeries &t)
 		  .parameter("NUM_YEARS", {20.0} )
 		  .parameter("INITIAL_AGE", {15.0} )
 		  .parameter("DECLINE_STOCHASTIC", {0.1} )
+		  .parameter("RISK_SUSCEPTIBLE", {0.0} )
+		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
+		  .parameter("RATE_PARTNER_CHANGE", {0.0} )
+		  .parameter("RATE_PARTNER_CHANGE_STDEV", {0.0} )
 		  .parameter("PREVALENCE", {0.0} )).simulate();
 }
 
@@ -289,10 +369,12 @@ int main(int argc, char **argv)
 {
   sim::Simulation(sim::Options()
 		  .additionalTests({testSti})
+		  .beforeEachSimulation(report)
 		  .events({sim::advanceTimeEvent
 			, increasePopulationDeterministicEvent
 			, emigrationDeterministicEvent
-			// , report
+			, becomeInfected
+			, report
 			})
 		  .afterEachSimulation(report)
 		  .commandLine(argc, argv)

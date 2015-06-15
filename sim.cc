@@ -1,19 +1,3 @@
-#include <cassert>
-#include <cfloat>
-#include <cmath>
-
-#include <algorithm>
-#include <exception>
-#include <iostream>
-#include <fstream>
-#include <functional>
-#include <random>
-#include <sstream>
-#include <string>
-#include <vector>
-#include <unordered_map>
-#include <thread>
-
 #include "sim.hh"
 
 
@@ -434,7 +418,7 @@ double sim::median(std::vector<double> & values)
   double answer;
   size_t middle;
 
-  if (values.size() == 0) 
+  if (values.size() == 0)
     return 0.0;
 
   if (values.size() == 1)
@@ -442,13 +426,294 @@ double sim::median(std::vector<double> & values)
 
   middle = values.size() / 2;
   nth_element(values.begin(), values.begin() + middle, values.end());
-  
+
   if (values.size() % 2 == 0) {
-    answer = *(values.begin() + middle) + *max_element(values.begin(), 
+    answer = *(values.begin() + middle) + *max_element(values.begin(),
 						       values.begin() + middle);
     answer /= 2.0;
   } else {
     answer = *(values.begin() + middle);
   }
   return answer;
+}
+
+
+// Context methods
+
+void
+Context::set_defaults_not_yet_set()
+{
+  set_if_not_set("NUM_AGENTS", { 100 });
+  set_if_not_set("TIME_STEP", { DAY });
+  set_if_not_set("NUM_YEARS", { 20.0 });
+  set_if_not_set("ITERATIONS", { (*this)("NUM_YEARS") *
+	(1.0 /  (*this)("TIME_STEP")) });
+  set_if_not_set("PROB_MALE", { 0.5 });
+  set_if_not_set("START_DATE", { 2010.0 });
+  set_if_not_set("YOUNGEST_AGE", { 15.0 });
+  set_if_not_set("OLDEST_AGE", { 49.0 });
+  set_if_not_set("LATEST_BIRTH_DATE",
+		 { (*this)("START_DATE") - (*this)("YOUNGEST_AGE") });
+  set_if_not_set("EARLIEST_BIRTH_DATE",
+		 { (*this)("START_DATE") - (*this)("OLDEST_AGE") });
+  set_if_not_set("HIV_PREVALENCE_STAGE", { 0.025, 0.025, 0.025, 0.025 });
+  set_if_not_set("HIV_PREVALENCE", { 0.19 });
+  set_if_not_set("PROB_CIRCUMCISED", { 0.2 });
+  set_if_not_set("NUM_SIMULATIONS", { 1.0 });
+  set_if_not_set("SIMULATIONS_PER_THREAD", { 10.0 });
+  set_if_not_set("THREADED", { 1.0 });
+}
+
+double
+Context::operator()(const char * key, size_t i)
+{
+  if (parameters.find(key) == parameters.end()) {
+    std::stringstream ss;
+#ifdef __GNUC__
+#ifdef TRACING
+    void *array[20];
+    int size;
+    size = backtrace(array, 20);
+    backtrace_symbols_fd(array, size, STDERR_FILENO);
+#endif
+#endif
+    ss << "Unknown parameter: " << key << std::endl;
+    throw InvalidParameter(ss.str());
+  } else {
+    auto p = parameters.at(key);
+    if (i >= p.size())  {
+      std::stringstream ss;
+      ss << "Index " << i << " out of range for parameter "
+	 << key << std::endl;
+      throw  InvalidParameter(ss.str());
+    } else {
+      return p[i];
+    }
+  }
+}
+
+std::vector<double> &
+Context::get(const char *key)
+{
+  auto v = parameters.find(key);
+  if (v == parameters.end()) {
+    std::stringstream ss;
+    ss << "Unknown parameter: " << key << std::endl;
+    throw InvalidParameter(ss.str());
+  }
+  return v->second;
+}
+
+
+TimeAdjust
+Context::get_time_adjust(const char * s)
+{
+  TimeAdjust output;
+  auto t = parameters_to_time_adjust[s];
+  output.time_period = std::get<0>(t);
+  output.from = std::get<1>(t);
+  output.step = std::get<2>(t);
+  output.method = std::get<3>(t);
+  return output;
+}
+
+
+void
+Context::convert_probabilities_to_time_period(const char * key,
+					      double parameter_time_period,
+					      size_t start,
+					      size_t step)
+{
+  double actual_time_period = (*this)("TIME_STEP");
+  std::vector<double> & values = get(key);
+  for (auto it = values.begin() + start; it < values.end(); it += step)
+    *it = time_correct_prob(*it, parameter_time_period, actual_time_period);
+}
+
+
+void
+Context::convert_linear_values_to_time_period(const char * key,
+					     double parameter_time_period,
+					     size_t start,
+					     size_t step)
+{
+  double actual_time_period = (*this)("TIME_STEP");
+  std::vector<double> & values = get(key);
+  for (auto it = values.begin() + start; it < values.end(); it += step)
+    *it = time_correct_linear(*it, parameter_time_period,
+			      actual_time_period);
+}
+
+void
+Context::convert_compound_product_to_time_period(const char * key,
+						 double parameter_time_period,
+						 size_t start,
+						 size_t step)
+{
+  double actual_time_period = (*this)("TIME_STEP");
+  std::vector<double> & values = get(key);
+  for (auto it = values.begin() + start; it < values.end(); it += step)
+    *it = time_correct_compound(*it, parameter_time_period,
+				actual_time_period);
+}
+
+void
+Context::adjust_parameters_to_time_period()
+{
+  for (auto entry : parameters_to_time_adjust) {
+    if (std::get<3>(entry.second) == PROBABILITY)
+      convert_probabilities_to_time_period(entry.first.c_str(),
+					   std::get<0>(entry.second),
+					   std::get<1>(entry.second),
+					   std::get<2>(entry.second));
+    else if (std::get<3>(entry.second) == LINEAR)
+      convert_linear_values_to_time_period(entry.first.c_str(),
+					   std::get<0>(entry.second),
+					   std::get<1>(entry.second),
+					   std::get<2>(entry.second));
+    else
+      convert_compound_product_to_time_period(entry.first.c_str(),
+					      std::get<0>(entry.second),
+					      std::get<1>(entry.second),
+					      std::get<2>(entry.second));
+  }
+}
+
+void
+Context::print_parameters()
+{
+  for (auto entry : parameters) {
+    std::cout << entry.first << ":\t";
+    for (auto d : entry.second)
+      std::cout << d << "\t";
+    std::cout << std::endl;
+  }
+}
+
+///////////////
+
+
+// Reporter methods
+
+Reporter::Reporter(std::function<double(const Simulation &)> getValueFunc,
+		   std::function<double(std::vector<double> &)> calcFunc,
+		   std::function<void(const double)> outputFunc)
+{
+  getValueFunc_ = getValueFunc;
+  calcFunc_ = calcFunc;
+  outputFunc_ = outputFunc;
+}
+
+
+//////////////
+
+
+// Simulation methods
+
+Simulation::~Simulation()
+{
+  for (auto a : agents)
+    delete a;
+  for (auto a : dead_agents)
+    delete a;
+  for (auto a : aged_out_agents)
+    delete a;
+  if (simulation_num == 0 && reporters_) {
+    delete reporters_;
+    reporters_ = NULL;
+  }
+}
+
+void
+Simulation::setOptions(const Options & options)
+{
+  events_ = options.events_;
+  tests_ = options.tests_;
+  argc_ = options.argc_;
+  argv_ = options.argv_;
+  agent_create_func_ = options.individual_agent_create_func_;
+  create_all_agents_func_ = options.all_agents_create_func_;
+  before_all_simulations_func_ = options.before_all_simulations_func_;
+  before_each_simulation_func_ = options.before_each_simulation_func_;
+  after_each_simulation_func_ = options.after_each_simulation_func_;
+  context = options.context_;
+  if (options.reporters_.size()) {
+    reporters_ = new std::vector<Reporter>;
+    for (auto & r : options.reporters_)
+      reporters_->push_back(r);
+  }
+}
+
+
+void
+Simulation::init(unsigned seed)
+{
+  rng.seed(seed);
+  time_step = context("TIME_STEP");
+  current_date = context("START_DATE");
+  total_iterations = context("ITERATIONS");
+  if (create_all_agents_func_)
+    create_all_agents_func_(*this);
+  for (unsigned i = 0; i < context("NUM_AGENTS"); ++i) {
+    Agent *a = agent_create_func_(context);
+    agents.push_back(a);
+  }
+}
+
+
+
+
+
+
+
+void
+Simulation::simulate()
+{
+  std::vector<std::thread> threads;
+  size_t num_sims, sim_per_thread, num_threads;
+
+  if (argc_)
+    process_command_line(context, argc_, argv_, tests_);
+
+  context.set_defaults_not_yet_set();
+  context.adjust_parameters_to_time_period();
+
+  num_sims = context("NUM_SIMULATIONS");
+
+  if (before_all_simulations_func_)
+    before_all_simulations_func_(*this);
+
+  if (reporters_)
+    for (auto & r : *reporters_)
+      r.setSize(num_sims);
+
+  if (context("THREADED")) {
+    sim_per_thread = context("SIMULATIONS_PER_THREAD");
+    num_threads = ceil((double) num_sims / sim_per_thread );
+    for (size_t i = 0; i < num_threads; ++i) {
+      size_t from = i * sim_per_thread;
+      size_t to = std::min((i + 1) * sim_per_thread, num_sims);
+      threads.push_back(std::thread(threaded_part_of_sim_loop,
+				    std::ref(*this), from, to));
+    }
+    for (auto & t : threads)
+      t.join();
+  } else {
+    threaded_part_of_sim_loop(*this, 0, num_sims);
+  }
+  if (reporters_)
+    for (auto & r : *reporters_) {
+      r.calculate();
+      r.output();
+    }
+}
+
+
+void
+Simulation::simulate_once()
+{
+  for (current_iteration = 0; current_iteration < total_iterations;
+       ++current_iteration)
+    for (auto event : events_)
+      event(*this);
 }
