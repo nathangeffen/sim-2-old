@@ -137,6 +137,11 @@ namespace sim {
 		    TimeAdjustMethod method = PROBABILITY);
     TimeAdjust get_time_adjust(const char * s);
     double get_time_adjust(std::string & s);
+    void set_initial(size_t num_agents,
+		     std::vector< std::string > characteristics);
+    std::pair<size_t, std::vector<std::string> > & get_initial(size_t i);
+    std::vector< std::pair<size_t, std::vector<std::string> > > &
+    get_initial();
     void
     convert_probabilities_to_time_period(const char * key,
 					 double parameter_time_period,
@@ -161,6 +166,7 @@ namespace sim {
     std::unordered_map<std::string,
 		       std::tuple<double, size_t, size_t, TimeAdjustMethod> >
     parameters_to_time_adjust;
+    std::vector<std::pair<size_t, std::vector<std::string> > > initialization;
   };
 
   void process_command_line(Context &context,
@@ -217,7 +223,7 @@ namespace sim {
     Options& commandLine(int argc, char **argv);
     Options& agentCreate(std::function<Agent *(Context &)>
 			 individual_agent_create_func);
-    Options& allAgentsCreate(std::function<void *(Simulation &)>
+    Options& allAgentsCreate(std::function<void (Simulation &)>
 			     all_agents_create_func);
     Options& beforeAllSimulations(std::function<void(Simulation &)>
 				  before_all_simulations_func);
@@ -242,7 +248,7 @@ namespace sim {
     int argc_;
     char **argv_;
     std::function<Agent *(Context &)> individual_agent_create_func_;
-    std::function<void *(Simulation &)> all_agents_create_func_;
+    std::function<void(Simulation &)> all_agents_create_func_;
     std::function<void(Simulation &)> before_all_simulations_func_;
     std::function<void(Simulation &)>  before_each_simulation_func_;
     std::function<void(Simulation &)> after_each_simulation_func_;
@@ -262,7 +268,7 @@ namespace sim {
     init(unsigned seed,
 	 Events events,
 	 std::function<Agent *(Context &)> agent_create_func,
-	 std::function<void *(Simulation &)> create_all_agents_func);
+	 std::function<void (Simulation &)> create_all_agents_func);
     double
     time_correct_prob(const double parameter_prob,
 		      const double parameter_time_period);
@@ -288,7 +294,7 @@ namespace sim {
     char **argv_;
     std::vector<Reporter> *reporters_ = NULL;
     std::function<Agent *(Context &)> agent_create_func_;
-    std::function<void *(Simulation &)> create_all_agents_func_;
+    std::function<void (Simulation &)> create_all_agents_func_;
     std::function<void(Simulation &)> before_all_simulations_func_;
     std::function<void(Simulation &)> before_each_simulation_func_;
     std::function<void(Simulation &)> after_each_simulation_func_;
@@ -497,7 +503,7 @@ Options::agentCreate(std::function<Agent *(Context &)>
 		     individual_agent_create_func)
 { individual_agent_create_func_ = individual_agent_create_func; return *this; }
 inline Options&
-Options::allAgentsCreate(std::function<void *(Simulation &)>
+Options::allAgentsCreate(std::function<void(Simulation &)>
 			 all_agents_create_func)
 { all_agents_create_func_ = all_agents_create_func; return *this; }
 inline Options&
@@ -564,7 +570,7 @@ inline void
 Simulation::init(unsigned seed,
 		 Events events,
 		 std::function<Agent *(Context &)> agent_create_func,
-		 std::function<void *(Simulation &)> create_all_agents_func)
+		 std::function<void (Simulation &)> create_all_agents_func)
 {
   events_ = events;
   agent_create_func_ = agent_create_func;

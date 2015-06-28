@@ -1,0 +1,19 @@
+# ,Parameters for Khayelitsha HIV model,,,,
+#,INITIALIZATION,,,,
+# ,num,age,area,sex,hiv
+@,1000,0-4,Site B,male,neg
+@,20,0-4,Site B,male,pos
+@,1005,0-4,Site B,female,neg
+@,10,0-4,Site B,female,pos
+@,500,0-4,Site C,male,neg
+@,5,0-4,Site C,male,pos
+@,495,0-4,Site C,female,neg
+@,10,0-4,Site C,female,pos
+@,995,5-9,Site B,male,neg
+@,10,5-9,Site B,male,pos
+@,1000,5-9,Site B,female,neg
+@,5,5-9,Site B,female,pos
+@,495,5-9,Site C,male,neg
+@,1,5-9,Site C,male,pos
+@,490,5-9,Site C,female,neg
+@,2,5-9,Site C,female,pos

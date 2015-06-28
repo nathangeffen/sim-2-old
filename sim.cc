@@ -83,7 +83,8 @@ get_csv_table(const char *parameter_file_name)
 }
 
 void
-process_parameter_file(Context& context, const char * parameter_file_name)
+process_parameter_file(Context& context,
+		       const char * parameter_file_name)
 {
   std::vector< std::vector<std::string> > csv_table =
     get_csv_table(parameter_file_name);
@@ -91,37 +92,46 @@ process_parameter_file(Context& context, const char * parameter_file_name)
   for (auto line : csv_table) {
     std::vector<double> values;
     if ( line.size() > 1 ) {
-      for (auto it = line.begin() + 1; it != line.end(); ++it) {
-	if ((*it)[0] == '!' || (*it)[0] == '^' || (*it)[0] == '&') {
-	  // 01234567
-	  // !1.0!0!2
-	  double time_period = 1.0;
-	  size_t from = 0, step = 1;
-	  TimeAdjustMethod method;
-	  switch ((*it)[0]) {
-	  case '!': method = LINEAR; break;
-	  case '&' : method = PROBABILITY; break;
-	  case '^' : method = COMPOUND; break;
-	  }
-	  size_t index1 = (*it).find('!', 1), index2 = std::string::npos;
-	  if (index1 != std::string::npos) {
-	    time_period = std::stod((*it).substr(1, index1 - 1));
-	    index2 = (*it).find('!', index1 + 1);
-	    if (index2 != std::string::npos){
-	      from = std::stoul((*it).substr(index1 + 1, index2 - index1));
-	      step = std::stoul((*it).substr(index2 + 1));
-	    } else {
-	      from = std::stod((*it).substr(index1 + 1));
-	    }
-	  } else {
-	    time_period = std::stod((*it).substr(1));
-	  }
-	  context.set_time_adjust(line[0], time_period, from, step, method);
-	} else {
-	  values.push_back(std::stod(*it));
+      if (line[0] == "@") {
+	size_t num_agents = std::stoul(line[1]);
+	std::vector<std::string> characteristics;
+	for (auto it = line.begin() + 2; it != line.end(); ++it) {
+	  characteristics.push_back(*it);
 	}
+	context.set_initial(num_agents, characteristics);
+      } else {
+	for (auto it = line.begin() + 1; it != line.end(); ++it) {
+	  if ((*it)[0] == '!' || (*it)[0] == '^' || (*it)[0] == '&') {
+	    // 01234567
+	    // !1.0!0!2
+	    double time_period = 1.0;
+	    size_t from = 0, step = 1;
+	    TimeAdjustMethod method;
+	    switch ((*it)[0]) {
+	    case '!': method = LINEAR; break;
+	    case '&' : method = PROBABILITY; break;
+	    case '^' : method = COMPOUND; break;
+	    }
+	    size_t index1 = (*it).find('!', 1), index2 = std::string::npos;
+	    if (index1 != std::string::npos) {
+	      time_period = std::stod((*it).substr(1, index1 - 1));
+	      index2 = (*it).find('!', index1 + 1);
+	      if (index2 != std::string::npos){
+		from = std::stoul((*it).substr(index1 + 1, index2 - index1));
+		step = std::stoul((*it).substr(index2 + 1));
+	      } else {
+		from = std::stod((*it).substr(index1 + 1));
+	      }
+	    } else {
+	      time_period = std::stod((*it).substr(1));
+	    }
+	    context.set_time_adjust(line[0], time_period, from, step, method);
+	  } else {
+	    values.push_back(std::stod(*it));
+	  }
+	}
+	context.set(line[0], values);
       }
-      context.set(line[0], values);
     }
   }
 }
@@ -519,6 +529,26 @@ Context::get_time_adjust(const char * s)
 
 
 void
+Context::set_initial(size_t num_agents,
+		     std::vector< std::string > characteristics)
+{
+  initialization.push_back(std::pair<size_t, std::vector<std::string> >
+			   (num_agents, characteristics));
+}
+
+std::pair<size_t, std::vector<std::string> > &
+Context::get_initial(size_t i)
+{
+  return initialization[i];
+}
+
+std::vector< std::pair<size_t, std::vector<std::string> > > &
+Context::get_initial()
+{
+  return initialization;
+}
+
+void
 Context::convert_probabilities_to_time_period(const char * key,
 					      double parameter_time_period,
 					      size_t start,
@@ -654,10 +684,11 @@ Simulation::init(unsigned seed)
   total_iterations = context("ITERATIONS");
   if (create_all_agents_func_)
     create_all_agents_func_(*this);
-  for (unsigned i = 0; i < context("NUM_AGENTS"); ++i) {
-    Agent *a = agent_create_func_(context);
-    agents.push_back(a);
-  }
+  else
+    for (unsigned i = 0; i < context("NUM_AGENTS"); ++i) {
+      Agent *a = agent_create_func_(context);
+      agents.push_back(a);
+    }
 }
 
 

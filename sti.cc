@@ -49,8 +49,8 @@ StiAgent *createStiAgent(sim::Context &c)
   }
 
   { // Rate of partner change
-    double rate_partner_change = c("RATE_PARTNER_CHANGE");
-    double rate_partner_change_stdev = c("RATE_PARTNER_CHANGE_STDEV");
+    double rate_partner_change = c("PARTNER_FORMATION_RATE");
+    double rate_partner_change_stdev = c("PARTNER_FORMATION_RATE_STDEV");
     std::normal_distribution<double> rate(rate_partner_change,
 					  rate_partner_change_stdev);
     a->rate_partner_change = rate(sim::rng);
@@ -65,7 +65,27 @@ StiAgent *createStiAgent(sim::Context &c)
   return a;
 }
 
-void increasePopulationDeterministicEvent(sim::Simulation &s)
+void calcVariablesEvent(sim::Simulation &s)
+{
+  size_t num_susceptible = 0.0, num_infected = 0.0, num_uninfectious = 0.0;
+
+  for (auto & a: s.agents) {
+    StiAgent *agent = (StiAgent *) a;
+    if (agent->status == SUSCEPTIBLE)
+      ++num_susceptible;
+    else if (agent->status == INFECTED)
+      ++num_infected;
+    else
+      ++num_uninfectious;
+
+  }
+  s.context.set("_AGENTS",s.agents.size());
+  s.context.set("_SUSCEPTIBLE", num_susceptible);
+  s.context.set("_INFECTIOUS", num_infected);
+  s.context.set("_UNINFECTIOUS", num_uninfectious);
+}
+
+void increasePopulationDiffEqEvent(sim::Simulation &s)
 {
   std::uniform_real_distribution<double> uni;
   unsigned num_agents_to_create;
@@ -76,7 +96,7 @@ void increasePopulationDeterministicEvent(sim::Simulation &s)
   s.context.set_if_not_set("_PARTIAL_GROWTH", { 0.0 });
   double &partial_growth = s.context.get("_PARTIAL_GROWTH")[0];
   double growth;
-  size_t num_agents = s.agents.size();
+  size_t num_agents = s.context("_AGENTS");
 
   growth_rate = normal(sim::rng);
   growth = std::max(0.0, growth_rate * (num_agents + partial_growth));
@@ -98,7 +118,7 @@ void increasePopulationStochasticEvent(sim::Simulation &s)
 {
   double growth_rate = s.context("GROWTH_STOCHASTIC");
   double initial_age = s.context("INITIAL_AGE");
-  size_t num_agents = s.agents.size();
+  size_t num_agents = s.context("_AGENTS");
 
   for (size_t i = 0; i < num_agents; ++i) {
     auto sti_agent = (StiAgent *) s.agents[i];
@@ -118,7 +138,7 @@ void increasePopulationStochasticEvent(sim::Simulation &s)
 
 
 
-void emigrationDeterministicEvent(sim::Simulation &s)
+void emigrationDiffEqEvent(sim::Simulation &s)
 {
   std::uniform_real_distribution<double> uni;
   unsigned num_agents_to_remove;
@@ -128,7 +148,7 @@ void emigrationDeterministicEvent(sim::Simulation &s)
   s.context.set_if_not_set("_PARTIAL_DECLINE", { 0.0 });
   double &partial_decline = s.context.get("_PARTIAL_DECLINE")[0];
   double decline, floor_decline;
-  size_t num_agents = s.agents.size();
+  size_t num_agents = s.context("_AGENTS");
 
   decline_rate = normal(sim::rng);
   decline = decline_rate * (num_agents + partial_decline);
@@ -172,29 +192,27 @@ void emigrationStochasticEvent(sim::Simulation &s)
   }
 }
 
-void becomeInfected(sim::Simulation &s)
+void infectedDiffEqEvent(sim::Simulation &s)
 {
-  size_t I = 0; // infectious
+  double_t I = s.context("_INFECTIOUS"); // num infectious
+  double S = s.context("_SUSCEPTIBLE");
+  double N = s.context("_AGENTS"); // num agents
+  double recovery_rate = s.time_step / s.context("DURATION_INFECTION");
+  double beta = s.context("RISK_SUSCEPTIBLE"); // transmission probability
+  double c = s.context("PARTNER_FORMATION_RATE");
+  double delta = c * beta * (I / N);
 
-  for (auto &a : s.agents) {
-    StiAgent *agent = (StiAgent *) a;
-    if (agent->status == INFECTED)
-      ++I;
-  }
+  double estimated_new_infections = delta * S - recovery_rate * I;
+  double risk_individual_infected = estimated_new_infections / S;
+
+  // std::cout << "D0: " << delta << " " << I << " " << S << " " << N << " "
+  //	    << std::setprecision(6)  << risk_individual_infected << std::endl;
+
 
   for (auto &a : s.agents) {
     StiAgent *agent  = (StiAgent *) a;
     if (agent->status == SUSCEPTIBLE) {
-      double risk_infection =
-	agent->risk_susceptible * (double) I / (double) s.agents.size();
-      if (sim::is_event(risk_infection)) {
-	agent->status = INFECTED;
-	agent->dates_infected.push_back(s.current_date);
-      }
-    } else if (agent->status == UNINFECTIOUS) {
-      double risk_infection =
-	agent->risk_uninfectious * (double) I / (double) s.agents.size();
-      if (sim::is_event(risk_infection)) {
+      if (sim::is_event(risk_individual_infected)) {
 	agent->status = INFECTED;
 	agent->dates_infected.push_back(s.current_date);
       }
@@ -253,7 +271,8 @@ void testSti(tst::TestSeries &t)
 
   sim::Simulation(sim::Options()
 		  .events({sim::advanceTimeEvent
-			, increasePopulationDeterministicEvent})
+			, calcVariablesEvent
+			, increasePopulationDiffEqEvent})
 		  .afterEachSimulation([&t](sim::Simulation &s) {
 		      TESTEQ(t, s.agents.size(), 67274, "Population growth");
 		    })
@@ -268,13 +287,14 @@ void testSti(tst::TestSeries &t)
 		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
-		  .parameter("RATE_PARTNER_CHANGE", {0.0} )
-		  .parameter("RATE_PARTNER_CHANGE_STDEV", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE_STDEV", {0.0} )
 		  .parameter("PREVALENCE", {0.0} )).simulate();
 
   sim::Simulation(sim::Options()
   		  .events({sim::advanceTimeEvent
-			, emigrationDeterministicEvent})
+			, calcVariablesEvent
+			, emigrationDiffEqEvent})
 		  .afterEachSimulation([&t](sim::Simulation &s) {
 		      TESTEQ(t, s.agents.size(), 423, "Population decline");
 		    })
@@ -290,12 +310,13 @@ void testSti(tst::TestSeries &t)
 		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
-		  .parameter("RATE_PARTNER_CHANGE", {0.0} )
-		  .parameter("RATE_PARTNER_CHANGE_STDEV", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE_STDEV", {0.0} )
    		  .parameter("PREVALENCE", {0.0} )).simulate();
 
   sim::Simulation(sim::Options()
 		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
 			, increasePopulationStochasticEvent
 			})
 		  .afterEachSimulation([&t](sim::Simulation &s) {
@@ -313,12 +334,13 @@ void testSti(tst::TestSeries &t)
 		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
-		  .parameter("RATE_PARTNER_CHANGE", {0.0} )
-		  .parameter("RATE_PARTNER_CHANGE_STDEV", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE_STDEV", {0.0} )
 		  .parameter("PREVALENCE", {0.0} )).simulate();
 
   sim::Simulation(sim::Options()
 		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
 			, emigrationStochasticEvent
 			})
 		  .agentCreate(createStiAgent)
@@ -359,8 +381,8 @@ void testSti(tst::TestSeries &t)
 		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
-		  .parameter("RATE_PARTNER_CHANGE", {0.0} )
-		  .parameter("RATE_PARTNER_CHANGE_STDEV", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE_STDEV", {0.0} )
 		  .parameter("PREVALENCE", {0.0} )).simulate();
 }
 
@@ -371,10 +393,11 @@ int main(int argc, char **argv)
 		  .additionalTests({testSti})
 		  .beforeEachSimulation(report)
 		  .events({sim::advanceTimeEvent
-			, increasePopulationDeterministicEvent
-			, emigrationDeterministicEvent
-			, becomeInfected
-			, report
+			, calcVariablesEvent
+			// , increasePopulationDiffEqEvent
+			// , emigrationDiffEqEvent
+			// , infectedDiffEqEvent
+			// , report
 			})
 		  .afterEachSimulation(report)
 		  .commandLine(argc, argv)
