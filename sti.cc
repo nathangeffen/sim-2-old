@@ -1,3 +1,93 @@
+/*
+ * Main PhD code for comparing the effect of model changes on outputs.
+ *
+
+ ### Model A
+
+ Deterministic population growth E1
+ Deterministic population deaths by HIV and ARV status E2
+     (5-stage Granich model)
+ Deterministic HIV infection (including by risk strata) 5
+ Including:
+ - Deterministic disease progression
+ - Deterministic go onto ARVs
+
+ ### Model B
+
+ Deterministic population immigration
+ Deterministic population emigration
+ Deterministic population births
+ Deterministic population deaths by HIV and ARV status (5-stage Granich model)
+ Stochastic HIV infection 6
+
+ ### Model C
+
+ Deterministic population immigration
+ Deterministic population emigration
+ Deterministic population births
+ Stochastic population deaths by HIV and ARV status (infection time) 7
+ Deterministic HIV infection
+
+ ### Model D
+
+ Deterministic population immigration
+ Deterministic population emigration
+ Deterministic population births
+ Stochastic population deaths by HIV and ARV status (infection time)
+ Stochastic HIV infection
+
+ ### Model E
+
+ Stochastic population immigration 8
+ Stochastic population emigration 9
+ Stochastic population births 10
+ Stochastic population deaths by HIV and ARV status (infection time)
+ Stochastic HIV infection
+
+ ### Model F
+
+ Stochastic population immigration
+ Stochastic population emigration
+ Stochastic population births
+ Stochastic population deaths by HIV and ARV status (infection time)
+ Stochastic HIV infection using Leigh's method 11
+
+ ### Model G
+
+ Stochastic population immigration
+ Stochastic population emigration
+ Stochastic population births
+ Stochastic population deaths by HIV and ARV status (infection time)
+ Stochastic random matching for HIV infection 12
+
+
+ ### Model H
+
+ Stochastic population immigration
+ Stochastic population emigration
+ Stochastic population births
+ Stochastic population deaths by HIV and ARV status (infection time)
+ Stochastic HIV infection using continuous heterogeneity k-random 13
+
+ ### Model I
+
+ Stochastic population immigration
+ Stochastic population emigration
+ Stochastic population births
+ Stochastic population deaths by HIV and ARV status (infection time)
+ Stochastic HIV infection using weighted shuffle 14
+
+
+ ### Model J
+
+ Stochastic population immigration
+ Stochastic population emigration
+ Stochastic population births
+ Stochastic population deaths by HIV and ARV status (infection time)
+ Stochastic HIV infection using cluster shuffle 15
+
+*/
+
 #include "sim.hh"
 
 enum Status {
@@ -85,20 +175,22 @@ void calcVariablesEvent(sim::Simulation &s)
   s.context.set("_UNINFECTIOUS", num_uninfectious);
 }
 
-void increasePopulationDiffEqEvent(sim::Simulation &s)
+/* E1 */
+
+void increasePopulationDeterministic(sim::Simulation &s)
 {
   std::uniform_real_distribution<double> uni;
   unsigned num_agents_to_create;
   double growth_rate = s.context("GROWTH");
-  double stdev = s.context("GROWTH_STDEV");
-  std::normal_distribution<double> normal(growth_rate, stdev);
+  // double stdev = s.context("GROWTH_STDEV");
+  // std::normal_distribution<double> normal(growth_rate, stdev);
   double initial_age = s.context("INITIAL_AGE");
   s.context.set_if_not_set("_PARTIAL_GROWTH", { 0.0 });
   double &partial_growth = s.context.get("_PARTIAL_GROWTH")[0];
   double growth;
   size_t num_agents = s.context("_AGENTS");
 
-  growth_rate = normal(sim::rng);
+  // growth_rate = normal(sim::rng);
   growth = std::max(0.0, growth_rate * (num_agents + partial_growth));
   partial_growth = growth - std::floor(growth);
 
@@ -107,11 +199,63 @@ void increasePopulationDiffEqEvent(sim::Simulation &s)
 
     for (unsigned i = 0; i < num_agents_to_create; ++i) {
       StiAgent *a = createStiAgent(s.context);
+      a->sex = (i % 2 == 0) ? sim::MALE : sim::FEMALE;
       a->dob = s.current_date - initial_age;
       a->status = SUSCEPTIBLE;
       s.agents.push_back(a);
     }
   }
+}
+
+/*
+ * E2
+ *
+ * Stage 0: HIV-negative
+ * Stage 1 to 4: WHO stages
+ * Stage 5: ARVs
+ */
+
+void decreasePopulationDeterministic(sim::Simulation &s)
+{
+  for (int stage = 0; stage < 6; ++stage) {
+    unsigned num_agents_to_remove;
+    std::string parm = "DECLINE_RATE_" + stage;
+    double decline_rate = s.context(parm.c_str());
+    parm = "_PARTIAL_DECLINE_" + stage;
+    s.context.set_if_not_set(parm.c_str(), { 0.0 });
+    double &partial_decline = s.context.get(parm.c_str())[0];
+    double decline, floor_decline;
+    parm = "_AGENTS_" + stage;
+    size_t num_agents = s.context(parm.c_str());
+
+    decline = decline_rate * (num_agents + partial_decline);
+
+    if (fabs(round(decline) - decline) < 0.000000000001) {
+      if (decline >= round(decline))
+	floor_decline = floor(decline);
+      else
+	floor_decline = ceil(decline);
+    } else {
+      floor_decline = floor(decline);
+    }
+
+    partial_decline = decline - floor_decline;
+
+    if (num_agents < floor_decline)
+      num_agents_to_remove = num_agents;
+    else
+      num_agents_to_remove = num_agents -  (size_t) floor_decline;
+
+    unsigned i = 0;
+    for (auto it = s.agents.begin();
+	 it != s.agents.end() && i < num_agents_to_remove;
+	 ++it, ++i) {
+      HIVAgent *agent = (HIVAgent *) *it;
+      if ( agent->hiv == stage)
+	agent->die(s, "DETERMINISTIC");
+    }
+  }
+  s.remove_dead_agents();
 }
 
 void increasePopulationStochasticEvent(sim::Simulation &s)
@@ -221,6 +365,7 @@ void infectedDiffEqEvent(sim::Simulation &s)
 }
 
 
+
 void report(sim::Simulation &s)
 {
   unsigned num_alive = s.agents.size();
@@ -272,7 +417,7 @@ void testSti(tst::TestSeries &t)
   sim::Simulation(sim::Options()
 		  .events({sim::advanceTimeEvent
 			, calcVariablesEvent
-			, increasePopulationDiffEqEvent})
+			, increasePopulationDeterministic})
 		  .afterEachSimulation([&t](sim::Simulation &s) {
 		      TESTEQ(t, s.agents.size(), 67274, "Population growth");
 		    })
@@ -292,27 +437,27 @@ void testSti(tst::TestSeries &t)
 		  .parameter("PREVALENCE", {0.0} )).simulate();
 
   sim::Simulation(sim::Options()
-  		  .events({sim::advanceTimeEvent
+		  .events({sim::advanceTimeEvent
 			, calcVariablesEvent
 			, emigrationDiffEqEvent})
 		  .afterEachSimulation([&t](sim::Simulation &s) {
 		      TESTEQ(t, s.agents.size(), 423, "Population decline");
 		    })
-  		  .agentCreate(createStiAgent)
-  		  .timeAdjust("DECLINE", 1.0, 0, 1, sim::COMPOUND)
-  		  .parameter("NUM_AGENTS", {10000.0} )
-  		  .parameter("TIME_STEP", {1.0 / 365.25} )
-  		  .parameter("NUM_YEARS", {30.0} )
-  		  .parameter("INITIAL_AGE", {15.0} )
-  		  .parameter("DECLINE", {0.9} )
-  		  .parameter("DECLINE_STDEV", {0.0} )
+		  .agentCreate(createStiAgent)
+		  .timeAdjust("DECLINE", 1.0, 0, 1, sim::COMPOUND)
+		  .parameter("NUM_AGENTS", {10000.0} )
+		  .parameter("TIME_STEP", {1.0 / 365.25} )
+		  .parameter("NUM_YEARS", {30.0} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("DECLINE", {0.9} )
+		  .parameter("DECLINE_STDEV", {0.0} )
 		  .parameter("RISK_SUSCEPTIBLE", {0.0} )
 		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS", {0.0} )
 		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
 		  .parameter("PARTNER_FORMATION_RATE", {0.0} )
 		  .parameter("PARTNER_FORMATION_RATE_STDEV", {0.0} )
-   		  .parameter("PREVALENCE", {0.0} )).simulate();
+		  .parameter("PREVALENCE", {0.0} )).simulate();
 
   sim::Simulation(sim::Options()
 		  .events({sim::advanceTimeEvent
@@ -325,7 +470,7 @@ void testSti(tst::TestSeries &t)
 		    })
 		  .agentCreate(createStiAgent)
 		  .timeAdjust("GROWTH_STOCHASTIC", 1.0, 0, 1, sim::PROBABILITY)
-  		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("NUM_AGENTS", {1000.0} )
 		  .parameter("TIME_STEP", {0.5} )
 		  .parameter("NUM_YEARS", {20.0} )
 		  .parameter("INITIAL_AGE", {15.0} )
@@ -346,15 +491,15 @@ void testSti(tst::TestSeries &t)
 		  .agentCreate(createStiAgent)
 		  .timeAdjust("DECLINE_STOCHASTIC", 1.0, 0, 1, sim::PROBABILITY)
 		  .report(sim::numAgents, sim::mean,
-		  	  [&](const double value) {
-		  	    TEST(t, value > 109 && value < 135,
+			  [&](const double value) {
+			    TEST(t, value > 109 && value < 135,
 				 "Stochastic decline mean");
 			  })
 		  .report(sim::numAgents, sim::median,
-		  	  [&](const double value) {
-		  	    TEST(t, value > 109 && value < 135,
+			  [&](const double value) {
+			    TEST(t, value > 109 && value < 135,
 				 "Stochastic decline median");
-		  	  })
+			  })
 		  .report(sim::numAgents,
 			  [](const std::vector<double> & values) {
 			    return *std::min_element(values.cbegin(),
@@ -371,7 +516,7 @@ void testSti(tst::TestSeries &t)
 			  [&](const double value) {
 			    TEST(t, value > 130, "stochastic decline max");
 			  })
-  		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("NUM_AGENTS", {1000.0} )
 		  .parameter("TIME_STEP", {0.1} )
 		  .parameter("NUM_SIMULATIONS", {10.0} )
 		  .parameter("NUM_YEARS", {20.0} )
@@ -389,12 +534,15 @@ void testSti(tst::TestSeries &t)
 
 int main(int argc, char **argv)
 {
+
+  // Model A
+
   sim::Simulation(sim::Options()
 		  .additionalTests({testSti})
 		  .beforeEachSimulation(report)
 		  .events({sim::advanceTimeEvent
 			, calcVariablesEvent
-			// , increasePopulationDiffEqEvent
+			// , increasePopulationDeterministic
 			// , emigrationDiffEqEvent
 			// , infectedDiffEqEvent
 			// , report

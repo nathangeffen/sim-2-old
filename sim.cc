@@ -4,7 +4,7 @@
 using namespace sim;
 
 namespace sim {
-  thread_local std::mt19937 rng;
+  thread_local  std::mt19937_64 rng;
 }
 
 //////////////////////////////
@@ -394,7 +394,7 @@ HIVAgent *sim::create_hiv_agent(Context &c)
   a->cd4 = 1000;
   a->hiv = 0;
   if (uni(rng) < c("HIV_PREVALENCE")) {
-    a->hiv = 1.0;
+    a->hiv = 1;
     std::uniform_real_distribution<double>
       uni_age(c("EARLIEST_BIRTH_DATE"),
 	      c("LATEST_BIRTH_DATE"));

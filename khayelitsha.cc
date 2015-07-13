@@ -101,11 +101,33 @@ void createAgents(Simulation & s)
   }
 }
 
+void calcVariablesEvent(sim::Simulation &s)
+{
+  size_t num_neg = 0.0, num_pos = 0.0, num_arvs = 0.0;
+
+  for (auto & a: s.agents) {
+    KhayaAgent *agent = (KhayaAgent *) a;
+    if (agent->hiv == 0)
+      ++num_neg;
+    else {
+      ++num_pos;
+      if (agent->on_arvs_date > 0.0)
+	++num_arvs;
+    }
+  }
+  s.context.set("_AGENTS",s.agents.size());
+  s.context.set("_NEG", num_neg);
+  s.context.set("_POS", num_pos);
+  s.context.set("_ARVS", num_arvs);
+}
+
+
 int main(int argc, char **argv)
 {
   sim::Simulation(sim::Options()
 		  .allAgentsCreate(createAgents)
 		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
 			// , increasePopulationDiffEqEvent
 			// , emigrationDiffEqEvent
 			// , infectedDiffEqEvent

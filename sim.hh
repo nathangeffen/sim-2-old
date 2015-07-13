@@ -52,7 +52,7 @@ namespace sim {
   };
 
   // Random number generators used throughout the simulation system
-  extern thread_local std::mt19937 rng;
+  extern thread_local  std::mt19937_64 rng;
 
   // Generates a random number and returns true if it is less than risk.
   bool
@@ -113,6 +113,15 @@ namespace sim {
     std::string msg;
     const char * what() const throw();
   };
+
+  // Thrown when invalid user data is encountered.
+  class InvalidData : public InvalidParameter
+  {
+  public:
+    InvalidData(const std::string & s = "Invalid user data.") :
+      InvalidParameter(s) {}
+  };
+
 
   class Context {
   public:
@@ -326,6 +335,7 @@ namespace sim {
     HIVAgent(Context &c);
     int hiv;
     double hiv_infection_date;
+    double on_arvs_date = 0.0;
     double cd4;
     bool circumcised;
     double orientation;
@@ -362,11 +372,10 @@ InvalidParameter::what() const throw()
 {
   return msg.c_str();
 }
+
 ///////////////
 
-
 // Context inline methods
-
 
 ///////////////
 
