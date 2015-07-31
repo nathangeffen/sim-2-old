@@ -15,7 +15,7 @@ TestSeries::test(bool expr,
   } else {
     ++failures_;
     if (verbose_)
-      std::clog << "FAIL:\t" << file << "\t" << line_num << "\t" << description
+      std::cout << "FAIL:\t" << file << "\t" << line_num << "\t" << description
 		<< std::endl;
     return false;
   }

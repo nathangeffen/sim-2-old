@@ -24,7 +24,9 @@
 #include <vector>
 #include <unordered_map>
 
+#include "debug.hh"
 #include "test.hh"
+
 
 namespace sim {
 
@@ -122,6 +124,28 @@ namespace sim {
       InvalidParameter(s) {}
   };
 
+  // Useful time series vectors for users to use as they choose
+  class Tracking {
+  public:
+    std::vector<unsigned> new_infections;
+    std::vector<unsigned> total_infections;
+    // The next 2d vector could be used for tracking, for example,
+    // transitions from HIV stage 1 to 2.
+    std::vector < std::vector<unsigned>  > transitions;
+    // The next 2d vector could be used for tracking, for example,
+    // how many people in HIV stage 1, stage 2, on ARVs etc.
+    std::vector < std::vector<unsigned>  > stages;
+    std::vector<unsigned> population;
+    std::vector<unsigned> births;
+    std::vector<unsigned> deaths;
+    std::vector<unsigned> immigrants;
+    std::vector<unsigned> emigrants;
+  };
+
+  // Global variable to store tracking from all contexts.
+  // Only used if simulation.tracking is on.
+  extern std::vector<Tracking> trackings;
+
 
   class Context {
   public:
@@ -169,6 +193,8 @@ namespace sim {
     void adjust_parameters_to_time_period();
     void print_parameters();
     unsigned last_agent = 0;
+    // Tracking data for context in each simulation
+    Tracking tracking;
     void *user_data = NULL;
   private:
     std::unordered_map<std::string, std::vector<double> > parameters;
@@ -250,6 +276,7 @@ namespace sim {
     Options& report(std::function<double(const Simulation &)> getValueFunc,
 		    std::function<double(std::vector<double> &)> calcFunc,
 		    std::function<void(const double)> outputFunc);
+    Options& tracking(bool on_off);
   private:
     friend class Simulation;
     Events events_;
@@ -263,6 +290,7 @@ namespace sim {
     std::function<void(Simulation &)> after_each_simulation_func_;
     Context context_;
     std::vector<Reporter> reporters_;
+    bool tracking_on_ = false;
   };
 
   class Simulation
@@ -307,6 +335,8 @@ namespace sim {
     std::function<void(Simulation &)> before_all_simulations_func_;
     std::function<void(Simulation &)> before_each_simulation_func_;
     std::function<void(Simulation &)> after_each_simulation_func_;
+    // Potentially slow so only switch on if necess
+    bool tracking_on_ = false;
     friend void
     threaded_part_of_sim_loop(Simulation & simulation, size_t from, size_t to)
     {
@@ -326,6 +356,8 @@ namespace sim {
 	if (s.reporters_)
 	  for (auto & r : *(s.reporters_))
 	    r.getReportValue(s, i);
+	if (simulation.tracking_on_)
+	  trackings[i] = s.context.tracking;
       }
     }
   };
@@ -334,6 +366,7 @@ namespace sim {
   public:
     HIVAgent(Context &c);
     int hiv;
+    int risk;
     double hiv_infection_date;
     double on_arvs_date = 0.0;
     double cd4;
@@ -551,6 +584,12 @@ Options::timeAdjust(const std::string & parameter,
 		    TimeAdjustMethod method)
 {
   context_.set_time_adjust(parameter, time_period, from, step, method);
+  return *this;
+}
+inline Options&
+Options::tracking(bool on_off)
+{
+  tracking_on_ = on_off;
   return *this;
 }
 inline Options&

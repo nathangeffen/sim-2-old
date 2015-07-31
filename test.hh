@@ -32,7 +32,7 @@ namespace tst {
 	      const char *file,
 	      const int line_num);
     unsigned summary() {
-      std::clog << description_ << " tests:\t" << tests_
+      std::cout << description_ << " tests:\t" << tests_
 		<< "\tSuccesses:\t" << successes_
 		<< "\tFailures:\t" << failures_ << std::endl;
       return failures_;
@@ -45,8 +45,8 @@ namespace tst {
 
 #define TESTCMP(test_series, ex1, cmp, ex2, desc) \
   if ( TEST(test_series, ex1 cmp ex2, desc) == false) {		\
-    std::clog << # ex1 << " " << #cmp << " " << # ex2 << std::endl;	\
-      std::clog << std::fixed << (ex1) << " " << #cmp << " "	\
+    std::cout << # ex1 << " " << #cmp << " " << # ex2 << std::endl;	\
+      std::cout << std::fixed << (ex1) << " " << #cmp << " "	\
 		<< std::fixed << (ex2) << std::endl;		\
   }
 

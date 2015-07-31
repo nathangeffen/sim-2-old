@@ -1,6 +1,6 @@
 #,Parameters for agent based model implementation of Granich et al. model,,,,,,,,,,,,,,,,,,,,,,
 INITIAL_AGE,,15,,,,,,,,,,,,,,,,,,,,,
-GROWTH,^1,1.111,,,,,,,,,,,,,,,,,,,,,
+# GROWTH,^1,1.111,,,,,,,,,,,,,,,,,,,,,
 GROWTH_STDEV,&1,0.01,,,,,,,,,,,,,,,,,,,,,
 GROWTH_STOCHASTIC,&1,0.1,,,,,,,,,,,,,,,,,,,,,
 DECLINE,^1,0.9,,,,,,,,,,,,,,,,,,,,,

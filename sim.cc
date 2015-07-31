@@ -1,10 +1,10 @@
 #include "sim.hh"
 
-
 using namespace sim;
 
 namespace sim {
   thread_local  std::mt19937_64 rng;
+  std::vector< Tracking > trackings;
 }
 
 //////////////////////////////
@@ -272,13 +272,19 @@ sim::process_command_line(Context &context,
 {
   // Command line options
   bool test = cmdOptionExists(argv, argv + argc, "-t");
+  bool test_only = cmdOptionExists(argv, argv + argc, "-to");
   bool verbose = cmdOptionExists(argv, argv + argc, "-v");
   char *parameter_file_str = getCmdOption(argv, argv + argc, "-f");
   char *verbosity_str = getCmdOption(argv, argv + argc, "-v");
   char *parameter_str = getCmdOption(argv, argv + argc, "-p");
 
-  if (test)
+  if (test || test_only)
     run_tests(user_tests);
+
+  if (test_only)
+    context.set("_SIM", 0.0);
+  else
+    context.set("_SIM", 1.0);
 
   if (parameter_file_str)
     process_parameter_file(context, parameter_file_str);
@@ -400,6 +406,7 @@ HIVAgent *sim::create_hiv_agent(Context &c)
 	      c("LATEST_BIRTH_DATE"));
   }
   a->riskiness = uni(rng);
+  a->risk = uni(rng) < c("HIGH_RISK_PROPORTION") ? 1 : 0;
   a->orientation = 1.0;
   a->num_partners = 0;
 
@@ -661,6 +668,7 @@ Simulation::setOptions(const Options & options)
   tests_ = options.tests_;
   argc_ = options.argc_;
   argv_ = options.argv_;
+  tracking_on_ = options.tracking_on_;
   agent_create_func_ = options.individual_agent_create_func_;
   create_all_agents_func_ = options.all_agents_create_func_;
   before_all_simulations_func_ = options.before_all_simulations_func_;
@@ -703,13 +711,19 @@ Simulation::simulate()
   std::vector<std::thread> threads;
   size_t num_sims, sim_per_thread, num_threads;
 
-  if (argc_)
+  if (argc_) {
     process_command_line(context, argc_, argv_, tests_);
+    if (context("_SIM") == 0.0)
+      return;
+  }
 
   context.set_defaults_not_yet_set();
   context.adjust_parameters_to_time_period();
 
   num_sims = context("NUM_SIMULATIONS");
+
+  if (tracking_on_)
+    trackings.reserve(num_sims);
 
   if (before_all_simulations_func_)
     before_all_simulations_func_(*this);
