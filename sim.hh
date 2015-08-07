@@ -230,8 +230,41 @@ namespace sim {
 				 size_t from, size_t to);
 
   double numAgents(const Simulation &s);
-  double mean(const std::vector<double> & values);
-  double median(std::vector<double> & values);
+
+  template <typename T>
+  T mean(const std::vector<T> & values)
+  {
+    T total = 0;
+    for (auto & v : values) {
+      total += v;
+    }
+    return total / (T) values.size();
+  }
+
+  template <typename T>
+  T median(std::vector<T> & values)
+  {
+    T answer;
+    size_t middle;
+
+    if (values.size() == 0)
+      return 0.0;
+
+    if (values.size() == 1)
+      return values[0];
+
+    middle = values.size() / 2;
+    nth_element(values.begin(), values.begin() + middle, values.end());
+
+    if (values.size() % 2 == 0) {
+      answer = *(values.begin() + middle) +
+	*max_element(values.begin(), values.begin() + middle);
+      answer /= 2.0;
+    } else {
+      answer = *(values.begin() + middle);
+    }
+    return answer;
+  }
 
   class Reporter {
   public:

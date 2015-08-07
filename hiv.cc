@@ -13,27 +13,29 @@
 
  ### Model B
 
- Deterministic population immigration
- Deterministic population emigration
- Deterministic population births
- Deterministic population deaths by HIV and ARV status (5-stage Granich model)
- Stochastic HIV infection 6
+ Deterministic population growth E1
+ Deterministic population deaths by HIV and ARV status E2
+     (5-stage Granich model)
+ Deterministic disease progression E3
+ Stochastic HIV infection (including by risk strata) 5 E6
+ Deterministic ARVs E5
 
  ### Model C
 
- Deterministic population immigration
- Deterministic population emigration
- Deterministic population births
- Stochastic population deaths by HIV and ARV status (infection time) 7
- Deterministic HIV infection
+ Deterministic population growth E1
+ Stochastic population deaths by HIV and ARV status (infection time) E7
+ Deterministic disease progression E3
+ Stochastic HIV infection (including by risk strata) 5 E6
+ Deterministic ARVs E5
 
  ### Model D
 
- Deterministic population immigration
- Deterministic population emigration
- Deterministic population births
- Stochastic population deaths by HIV and ARV status (infection time)
- Stochastic HIV infection
+ Deterministic population growth E1
+ Stochastic population deaths by HIV and ARV status (infection time) E7
+ Deterministic disease progression E3
+ Stochastic HIV infection (including by risk strata) 5 E6
+ Stochastic ARVs E8
+
 
  ### Model E
 
@@ -376,6 +378,109 @@ void arvsDeterministic(sim::Simulation &s)
   }
 }
 
+/*
+ * E6 - Infection simple stochastic
+ *
+ */
+
+
+void infectionRiskSimpleStochastic(sim::Simulation &s)
+{
+  size_t total_infections = 0;
+  size_t infectious = s.context("_AGENTS_1") + s.context("_AGENTS_2") +
+    s.context("_AGENTS_3") + s.context("_AGENTS_4");
+  double risk_infectious_partner = infectious / s.context("_AGENTS");
+  double time_period = s.context("INFECTION_PARAMETERS_TIME");
+  double force_infection = s.context("FORCE_INFECTION");
+  double risk_individual_act = risk_infectious_partner * force_infection;
+  double risk_not_infected_individual_act = 1.0 - risk_individual_act;
+  // High risk
+  double num_partnerships_high = s.context("NUM_PARTNERSHIPS_HIGH");
+  double risk_not_infected_high = pow(risk_not_infected_individual_act,
+				      num_partnerships_high);
+  double risk_infected_high = 1.0 - risk_not_infected_high;
+  risk_infected_high = sim::time_correct_prob(risk_infected_high,
+					      time_period,
+					      s.time_step);
+  // Low risk
+  double num_partnerships_low = s.context("NUM_PARTNERSHIPS_LOW");
+  double risk_not_infected_low = pow(risk_not_infected_individual_act,
+				     num_partnerships_low);
+  double risk_infected_low = 1.0 - risk_not_infected_low;
+  risk_infected_low = sim::time_correct_prob(risk_infected_low,
+					     time_period,
+					     s.time_step);
+
+
+  for (auto a = s.agents.begin(); a != s.agents.end(); ++a) {
+    HIVAgent *agent = (HIVAgent *) *a;
+    if (agent->risk == 1 && agent->hiv == 0 && is_event(risk_infected_high)) {
+      agent->hiv = 1;
+      agent->hiv_infection_date = s.current_date;
+      ++total_infections;
+    } else if (agent->risk == 0 && agent->hiv == 0 &&
+	       is_event(risk_infected_low)) {
+      agent->hiv = 1;
+      agent->hiv_infection_date = s.current_date;
+      ++total_infections;
+    }
+  }
+
+  s.context.tracking.new_infections.push_back(total_infections);
+}
+
+
+/*
+ * E7
+ *
+ * Stage 0: HIV-negative
+ * Stage 1 to 4: WHO stages
+ * Stage 5: ARVs
+ */
+
+void decreasePopulationStochastic(sim::Simulation &s)
+{
+  double decline_rates[6];
+  for (int stage = 0; stage < 6; ++stage)
+    decline_rates[stage] = s.context("DECLINE_RATE", stage);
+
+  for (auto & a : s.agents) {
+    HIVAgent *agent = (HIVAgent *) a;
+    if (is_event(decline_rates[agent->hiv]))
+      agent->die(s, "DETERMINISTIC");
+  }
+
+  s.remove_dead_agents();
+}
+
+/*
+ * E8
+ *
+ * People in each HIV stage move to ARVs with differing probabilities.  People
+ * on ARVs can also stop treatment or have viral rebound and move back to stage
+ * 3.
+ *
+ * ARV_RATE 0, 1, 2 and 3 are the rates of moving onto ARVs for WHO stages 1, 2,
+ * 3 and 4 respectively. ARV_RATE 5 is the rate for moving off ARVs.
+ */
+
+void arvsStochastic(sim::Simulation &s)
+{
+  double arv_rates[6];
+  for (int stage = 1; stage < 6; ++stage)
+    arv_rates[stage] = s.context("ARV_RATE", stage - 1);
+
+  for (auto & a : s.agents) {
+    HIVAgent *agent = (HIVAgent *) a;
+    if (agent->hiv > 0 && is_event(arv_rates[agent->hiv])) {
+      if ( agent->hiv < 5)
+	agent->hiv = 5;
+      else
+	agent->hiv = 3;
+    }
+  }
+}
+
 
 void emigrationDiffEqEvent(sim::Simulation &s)
 {
@@ -550,6 +655,7 @@ void report(sim::Simulation &s)
 
   std::cout << ss.str();
 }
+
 
 void testSti(tst::TestSeries &t)
 {
@@ -928,29 +1034,150 @@ void testSti(tst::TestSeries &t)
   		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
   		  .parameter("INITIAL_AGE", {15.0} )).simulate();
 
-  std::cout << "Testing E5 year - WHO stage only to ARVs" << std::endl;
+  std::cout << "Testing E6 one year with none on ARVs" << std::endl;
+  const size_t simulations = 100;
+  std::vector<double> susceptibles(simulations, 0.0);
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
+			, infectionRiskSimpleStochastic})
+		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
+		      unsigned susceptible =
+			count_if(s.agents.begin(), s.agents.end(),
+				 [](const sim::Agent *a) {
+				   const HIVAgent *b = (HIVAgent *) a;
+				   return b->hiv == 0;
+				 });
+		      susceptibles[s.simulation_num] = (double) susceptible;
+		    })
+		  .allAgentsCreate(createDeterministicAgents)
+		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("TIME_STEP", {1.0} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("INFECTION_PARAMETERS_TIME", {1.0})
+		  .parameter("FORCE_INFECTION", {0.05} )
+		  .parameter("NUM_PARTNERSHIPS_LOW", {0} )
+		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
+		  .parameter("HIV_PREVALENCE", {0.1, 0.00, 0.00, 0.00} )
+		  .parameter("NUM_SIMULATIONS", {simulations})
+		  .parameter("HIV_PREVALENCE_ARVS", {0.00} ))
+		  .simulate();
+  TESTRANGE(t, sim::mean(susceptibles), 583.0, 595.0, "Mean of stochastic run.");
+
+  susceptibles.clear();
+  susceptibles.resize(simulations);
+  std::cout << "Testing E6 one year with some on ARVs" << std::endl;
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
+			, infectionRiskSimpleStochastic})
+		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
+		      unsigned susceptible =
+			count_if(s.agents.begin(), s.agents.end(),
+				 [](const sim::Agent *a) {
+				   const HIVAgent *b = (HIVAgent *) a;
+				   return b->hiv == 0;
+				 });
+		      susceptibles[s.simulation_num] = (double) susceptible;
+		    })
+		  .allAgentsCreate(createDeterministicAgents)
+		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("TIME_STEP", {1.0} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("INFECTION_PARAMETERS_TIME", {1.0})
+		  .parameter("FORCE_INFECTION", {0.05} )
+		  .parameter("NUM_PARTNERSHIPS_LOW", {0} )
+		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
+		  .parameter("HIV_PREVALENCE", {0.05, 0.00, 0.00, 0.00} )
+		  .parameter("NUM_SIMULATIONS", {simulations})
+		  .parameter("HIV_PREVALENCE_ARVS", {0.1} ))
+		  .simulate();
+  TESTRANGE(t, sim::mean(susceptibles), 660.0, 668.0, "Mean of stochastic run.");
+
+  susceptibles.clear();
+  susceptibles.resize(simulations);
+  std::cout << "Testing E7 one year" << std::endl;
   sim::Simulation(sim::Options()
   		  .events({sim::advanceTimeEvent
   			, calcVariablesEvent
-  			, arvsDeterministic})
-  		  .afterEachSimulation([&t](sim::Simulation &s) {
+  			, decreasePopulationStochastic})
+  		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
+		      susceptibles[s.simulation_num] = (double) s.agents.size();
+  		    })
+  		  .agentCreate(create_hiv_agent)
+  		  .timeAdjust("DECLINE_RATE", 1.0, 0, 1, sim::PROBABILITY)
+  		  .parameter("NUM_AGENTS", {1000.0} )
+  		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+  		  .parameter("DECLINE_RATE",
+  			     {0.01, 0.02, 0.03, 0.1, 0.5, 0.015} )
+  		  .parameter("TIME_STEP", {1.0} )
+  		  .parameter("INITIAL_AGE", {15.0} )
+  		  .parameter("HIV_PREVALENCE", {0.0, 0.0, 0.0, 0.0} )
+  		  .parameter("NUM_SIMULATIONS", {simulations})
+  		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )).simulate();
+  TESTRANGE(t, sim::mean(susceptibles), 810.0, 822.0, "Mean of stochastic run.");
+
+  std::cout << "Testing E8 one year - ARVS to WHO stage only" << std::endl;
+  susceptibles.clear();
+  susceptibles.resize(simulations);
+  sim::Simulation(sim::Options()
+  		  .events({sim::advanceTimeEvent
+  			, calcVariablesEvent
+  			, arvsStochastic})
+  		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
   		      unsigned on_arvs =
   			count_if(s.agents.begin(), s.agents.end(),
   				 [](const sim::Agent *a) {
   				   const HIVAgent *b = (HIVAgent *) a;
   				   return b->hiv == 5;
   				 });
-  		      TESTEQ(t, on_arvs, 786, "On arvs");
+		      susceptibles[s.simulation_num] = on_arvs;
   		    })
   		  .allAgentsCreate(createDeterministicAgents)
   		  .timeAdjust("ARV_RATE", 1.0, 0, 1, sim::PROBABILITY)
-  		  .parameter("ARV_RATE", {0.1, 0.2, 0.3, 0.5, 0.0} )
+  		  .parameter("ARV_RATE", {0.0, 0.0, 0.0, 0.0, 0.1} )
   		  .parameter("NUM_AGENTS", {1000.0} )
-  		  .parameter("TIME_STEP", { sim::WEEK } )
-  		  .parameter("HIV_PREVALENCE", {0.1, 0.2, 0.3, 0.1} )
-  		  .parameter("HIV_PREVALENCE_ARVS", {0.1} )
+  		  .parameter("TIME_STEP", {1.0 } )
+  		  .parameter("HIV_PREVALENCE", {0.0, 0.0, 0.0, 0.0} )
+  		  .parameter("HIV_PREVALENCE_ARVS", {0.5} )
   		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+  		  .parameter("NUM_SIMULATIONS", {simulations})
   		  .parameter("INITIAL_AGE", {15.0} )).simulate();
+  TESTRANGE(t, sim::mean(susceptibles), 55, 65, "Mean of stochastic run.");
+  DEBUG(sim::mean(susceptibles));
+
+  std::cout << "Testing E8 one week - ARVs to WHO stage only" << std::endl;
+  susceptibles.clear();
+  susceptibles.resize(simulations);
+  sim::Simulation(sim::Options()
+  		  .events({sim::advanceTimeEvent
+  			, calcVariablesEvent
+  			, arvsStochastic})
+  		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
+  		      unsigned on_arvs =
+  			count_if(s.agents.begin(), s.agents.end(),
+  				 [](const sim::Agent *a) {
+  				   const HIVAgent *b = (HIVAgent *) a;
+  				   return b->hiv == 5;
+  				 });
+		      susceptibles[s.simulation_num] = on_arvs;
+  		    })
+  		  .allAgentsCreate(createDeterministicAgents)
+  		  .timeAdjust("ARV_RATE", 1.0, 0, 1, sim::PROBABILITY)
+  		  .parameter("ARV_RATE", {0.0, 0.0, 0.0, 0.0, 0.1} )
+  		  .parameter("NUM_AGENTS", {1000.0} )
+  		  .parameter("TIME_STEP", {sim::WEEK } )
+  		  .parameter("HIV_PREVALENCE", {0.0, 0.0, 0.0, 0.0} )
+  		  .parameter("HIV_PREVALENCE_ARVS", {0.5} )
+  		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+  		  .parameter("NUM_SIMULATIONS", {simulations})
+  		  .parameter("INITIAL_AGE", {15.0} )).simulate();
+  TESTRANGE(t, sim::mean(susceptibles), 55, 65, "Mean of stochastic run.");
+  DEBUG(sim::mean(susceptibles));
 }
 
 

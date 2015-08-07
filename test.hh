@@ -59,4 +59,7 @@ namespace tst {
 #define TESTDBL(test_series, ex1, ex2, desc) \
   TESTCMP(test_series, fabs((ex1) - (ex2)), < , 0.000000001, desc)
 
+#define TESTRANGE(test_series, ex1, ex2, ex3, desc)  \
+  TESTCMP(test_series, ( (ex1) >= (ex2) ), && , (ex1) <= (ex3), desc)
+
 #endif

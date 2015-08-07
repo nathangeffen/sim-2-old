@@ -421,40 +421,6 @@ double sim::numAgents(const Simulation &s)
   return (double) s.agents.size();
 }
 
-double sim::mean(const std::vector<double> & values)
-{
-  double total = 0.0;
-  for (auto & v : values) {
-    total += v;
-  }
-  return total / values.size();
-}
-
-double sim::median(std::vector<double> & values)
-{
-  double answer;
-  size_t middle;
-
-  if (values.size() == 0)
-    return 0.0;
-
-  if (values.size() == 1)
-    return values[0];
-
-  middle = values.size() / 2;
-  nth_element(values.begin(), values.begin() + middle, values.end());
-
-  if (values.size() % 2 == 0) {
-    answer = *(values.begin() + middle) + *max_element(values.begin(),
-						       values.begin() + middle);
-    answer /= 2.0;
-  } else {
-    answer = *(values.begin() + middle);
-  }
-  return answer;
-}
-
-
 // Context methods
 
 void
