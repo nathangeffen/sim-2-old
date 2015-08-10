@@ -235,9 +235,8 @@ namespace sim {
   T mean(const std::vector<T> & values)
   {
     T total = 0;
-    for (auto & v : values) {
+    for (auto & v : values)
       total += v;
-    }
     return total / (T) values.size();
   }
 

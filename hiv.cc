@@ -36,14 +36,13 @@
  Stochastic HIV infection (including by risk strata) 5 E6
  Stochastic ARVs E8
 
-
  ### Model E
 
- Stochastic population immigration 8
- Stochastic population emigration 9
- Stochastic population births 10
- Stochastic population deaths by HIV and ARV status (infection time)
- Stochastic HIV infection
+ Stochastic population growth E9
+ Stochastic population deaths by HIV and ARV status (infection time) E7
+ Stochastic disease progression E10
+ Stochastic HIV infection (including by risk strata) 5 E6
+ Stochastic ARVs E8
 
  ### Model F
 
@@ -145,7 +144,6 @@ void calcVariablesEvent(sim::Simulation &s)
 
 void increasePopulationDeterministic(sim::Simulation &s)
 {
-  std::uniform_real_distribution<double> uni;
   unsigned num_agents_to_create = 0;
   double growth_rate = 1.0 + s.context("GROWTH");
   double initial_age = s.context("INITIAL_AGE");
@@ -473,7 +471,7 @@ void arvsStochastic(sim::Simulation &s)
   for (auto & a : s.agents) {
     HIVAgent *agent = (HIVAgent *) a;
     if (agent->hiv > 0 && is_event(arv_rates[agent->hiv])) {
-      if ( agent->hiv < 5)
+      if (agent->hiv < 5)
 	agent->hiv = 5;
       else
 	agent->hiv = 3;
@@ -481,43 +479,45 @@ void arvsStochastic(sim::Simulation &s)
   }
 }
 
+/* E9 */
 
-void emigrationDiffEqEvent(sim::Simulation &s)
+void increasePopulationStochastic(sim::Simulation &s)
 {
-  std::uniform_real_distribution<double> uni;
-  unsigned num_agents_to_remove;
-  double decline_rate = s.context("DECLINE");
-  double stdev = s.context("DECLINE_STDEV");
-  std::normal_distribution<double> normal(decline_rate, stdev);
-  s.context.set_if_not_set("_PARTIAL_DECLINE", { 0.0 });
-  double &partial_decline = s.context.get("_PARTIAL_DECLINE")[0];
-  double decline, floor_decline;
+  double growth_rate = s.context("GROWTH");
   size_t num_agents = s.context("_AGENTS");
+  double initial_age = s.context("INITIAL_AGE");
 
-  decline_rate = normal(sim::rng);
-  decline = decline_rate * (num_agents + partial_decline);
-
-  if (fabs(round(decline) - decline) < 0.000000000001) {
-    if (decline >= round(decline))
-      floor_decline = floor(decline);
-    else
-      floor_decline = ceil(decline);
-  } else {
-    floor_decline = floor(decline);
-  }
-
-  partial_decline = decline - floor_decline;
-
-  if (num_agents < floor_decline)
-    num_agents_to_remove = num_agents;
-  else
-    num_agents_to_remove = num_agents -  (size_t) floor_decline;
-
-  for (unsigned i = 0; i < num_agents_to_remove; ++i) {
-    s.aged_out_agents.push_back(s.agents.back());
-    s.agents.pop_back();
+  for (size_t i = 0; i < num_agents; ++i) {
+    if (is_event(growth_rate)) {
+      HIVAgent *a = create_hiv_agent(s.context);
+      a->dob = s.current_date - initial_age;
+      a->hiv = 0;
+      s.agents.push_back(a);
+    }
   }
 }
+
+
+/*
+ * E10
+ *
+ * People move from HIV stage 1 through to HIV infection WHO stage 4,
+ *
+ */
+
+void diseaseProgressionStochastic(sim::Simulation &s)
+{
+  double change_rates[5];
+  for (int stage = 1; stage < 4; ++stage)
+    change_rates[stage] = s.context("DISEASE_CHANGE_RATE", stage - 1);
+
+  for (auto & a : s.agents) {
+    HIVAgent *agent = (HIVAgent *) a;
+    if (agent->hiv > 0 && agent->hiv < 4 && is_event(change_rates[agent->hiv]))
+      ++agent->hiv;
+  }
+}
+
 
 void createDeterministicAgents(Simulation & s)
 {
@@ -807,14 +807,14 @@ void testSti(tst::TestSeries &t)
 				   const HIVAgent *b = (HIVAgent *) a;
 				   return b->hiv == 1;
 				 });
-		      TESTEQ(t, stage_1, 11, "Infection change");
+		      TESTEQ(t, stage_1, 121, "Infection change");
 		    })
 		  .agentCreate(create_hiv_agent)
 		  .timeAdjust("DISEASE_CHANGE_RATE", 1.0, 0, 1,
 			      sim::PROBABILITY)
 		  .parameter("NUM_AGENTS", {1000.0} )
 		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
-		  .parameter("DISEASE_CHANGE_RATE", {0.2, 0.2, 0.2, 0.3} )
+		  .parameter("DISEASE_CHANGE_RATE", {0.1, 0.2, 0.3} )
 		  .parameter("TIME_STEP", {1.0 } )
 		  .parameter("INITIAL_AGE", {15.0} )
 		  .parameter("HIV_PREVALENCE", {1.0, 0.0, 0.0, 0.0} )
@@ -832,14 +832,14 @@ void testSti(tst::TestSeries &t)
 				   const HIVAgent *b = (HIVAgent *) a;
 				   return b->hiv == 1;
 				 });
-		      TESTEQ(t, stage_1, 11, "Infection change");
+		      TESTEQ(t, stage_1, 121, "Infection change");
 		    })
 		  .agentCreate(create_hiv_agent)
 		  .timeAdjust("DISEASE_CHANGE_RATE", 1.0, 0, 1,
 			      sim::PROBABILITY)
 		  .parameter("NUM_AGENTS", {1000.0} )
 		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
-		  .parameter("DISEASE_CHANGE_RATE", {0.2, 0.2, 0.2, 0.3} )
+		  .parameter("DISEASE_CHANGE_RATE", {0.1, 0.2, 0.3} )
 		  .parameter("TIME_STEP", {0.5 } )
 		  .parameter("INITIAL_AGE", {15.0} )
 		  .parameter("HIV_PREVALENCE", {1.0, 0.0, 0.0, 0.0} )
@@ -857,14 +857,14 @@ void testSti(tst::TestSeries &t)
 				   const HIVAgent *b = (HIVAgent *) a;
 				   return b->hiv == 1;
 				 });
-		      TESTEQ(t, stage_1, 11, "Infection change");
+		      TESTEQ(t, stage_1, 121, "Infection change");
 		    })
 		  .agentCreate(create_hiv_agent)
 		  .timeAdjust("DISEASE_CHANGE_RATE", 1.0, 0, 1,
 			      sim::PROBABILITY)
 		  .parameter("NUM_AGENTS", {1000.0} )
 		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
-		  .parameter("DISEASE_CHANGE_RATE", {0.2, 0.2, 0.2, 0.3} )
+		  .parameter("DISEASE_CHANGE_RATE", {0.1, 0.2, 0.3} )
 		  .parameter("TIME_STEP", {sim::WEEK} )
 		  .parameter("INITIAL_AGE", {15.0} )
 		  .parameter("HIV_PREVALENCE", {1.0, 0.0, 0.0, 0.0} )
@@ -1036,19 +1036,19 @@ void testSti(tst::TestSeries &t)
 
   std::cout << "Testing E6 one year with none on ARVs" << std::endl;
   const size_t simulations = 100;
-  std::vector<double> susceptibles(simulations, 0.0);
+  std::vector<double> measures(simulations, 0.0);
   sim::Simulation(sim::Options()
 		  .events({sim::advanceTimeEvent
 			, calcVariablesEvent
 			, infectionRiskSimpleStochastic})
-		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
+		  .afterEachSimulation([&measures](sim::Simulation &s) {
 		      unsigned susceptible =
 			count_if(s.agents.begin(), s.agents.end(),
 				 [](const sim::Agent *a) {
 				   const HIVAgent *b = (HIVAgent *) a;
 				   return b->hiv == 0;
 				 });
-		      susceptibles[s.simulation_num] = (double) susceptible;
+		      measures[s.simulation_num - 1] = (double) susceptible;
 		    })
 		  .allAgentsCreate(createDeterministicAgents)
 		  .parameter("NUM_AGENTS", {1000.0} )
@@ -1064,23 +1064,23 @@ void testSti(tst::TestSeries &t)
 		  .parameter("NUM_SIMULATIONS", {simulations})
 		  .parameter("HIV_PREVALENCE_ARVS", {0.00} ))
 		  .simulate();
-  TESTRANGE(t, sim::mean(susceptibles), 583.0, 595.0, "Mean of stochastic run.");
+  TESTRANGE(t, sim::mean(measures), 583.0, 595.0, "Mean of stochastic run.");
 
-  susceptibles.clear();
-  susceptibles.resize(simulations);
+  measures.clear();
+  measures.resize(simulations);
   std::cout << "Testing E6 one year with some on ARVs" << std::endl;
   sim::Simulation(sim::Options()
 		  .events({sim::advanceTimeEvent
 			, calcVariablesEvent
 			, infectionRiskSimpleStochastic})
-		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
+		  .afterEachSimulation([&measures](sim::Simulation &s) {
 		      unsigned susceptible =
 			count_if(s.agents.begin(), s.agents.end(),
 				 [](const sim::Agent *a) {
 				   const HIVAgent *b = (HIVAgent *) a;
 				   return b->hiv == 0;
 				 });
-		      susceptibles[s.simulation_num] = (double) susceptible;
+		      measures[s.simulation_num - 1] = (double) susceptible;
 		    })
 		  .allAgentsCreate(createDeterministicAgents)
 		  .parameter("NUM_AGENTS", {1000.0} )
@@ -1096,17 +1096,17 @@ void testSti(tst::TestSeries &t)
 		  .parameter("NUM_SIMULATIONS", {simulations})
 		  .parameter("HIV_PREVALENCE_ARVS", {0.1} ))
 		  .simulate();
-  TESTRANGE(t, sim::mean(susceptibles), 660.0, 668.0, "Mean of stochastic run.");
+  TESTRANGE(t, sim::mean(measures), 661.0, 669.0, "Mean of stochastic run.");
 
-  susceptibles.clear();
-  susceptibles.resize(simulations);
+  measures.clear();
+  measures.resize(simulations);
   std::cout << "Testing E7 one year" << std::endl;
   sim::Simulation(sim::Options()
   		  .events({sim::advanceTimeEvent
   			, calcVariablesEvent
   			, decreasePopulationStochastic})
-  		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
-		      susceptibles[s.simulation_num] = (double) s.agents.size();
+  		  .afterEachSimulation([&measures](sim::Simulation &s) {
+		      measures[s.simulation_num - 1] = (double) s.agents.size();
   		    })
   		  .agentCreate(create_hiv_agent)
   		  .timeAdjust("DECLINE_RATE", 1.0, 0, 1, sim::PROBABILITY)
@@ -1119,23 +1119,23 @@ void testSti(tst::TestSeries &t)
   		  .parameter("HIV_PREVALENCE", {0.0, 0.0, 0.0, 0.0} )
   		  .parameter("NUM_SIMULATIONS", {simulations})
   		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )).simulate();
-  TESTRANGE(t, sim::mean(susceptibles), 810.0, 822.0, "Mean of stochastic run.");
+  TESTRANGE(t, sim::mean(measures), 810.0, 822.0, "Mean of stochastic run.");
 
   std::cout << "Testing E8 one year - ARVS to WHO stage only" << std::endl;
-  susceptibles.clear();
-  susceptibles.resize(simulations);
+  measures.clear();
+  measures.resize(simulations);
   sim::Simulation(sim::Options()
   		  .events({sim::advanceTimeEvent
   			, calcVariablesEvent
   			, arvsStochastic})
-  		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
+  		  .afterEachSimulation([&measures](sim::Simulation &s) {
   		      unsigned on_arvs =
   			count_if(s.agents.begin(), s.agents.end(),
   				 [](const sim::Agent *a) {
   				   const HIVAgent *b = (HIVAgent *) a;
   				   return b->hiv == 5;
   				 });
-		      susceptibles[s.simulation_num] = on_arvs;
+		      measures[s.simulation_num - 1] = on_arvs;
   		    })
   		  .allAgentsCreate(createDeterministicAgents)
   		  .timeAdjust("ARV_RATE", 1.0, 0, 1, sim::PROBABILITY)
@@ -1147,37 +1147,181 @@ void testSti(tst::TestSeries &t)
   		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
   		  .parameter("NUM_SIMULATIONS", {simulations})
   		  .parameter("INITIAL_AGE", {15.0} )).simulate();
-  TESTRANGE(t, sim::mean(susceptibles), 55, 65, "Mean of stochastic run.");
-  DEBUG(sim::mean(susceptibles));
+  TESTRANGE(t, sim::mean(measures), 55, 65, "Mean of stochastic run.");
 
-  std::cout << "Testing E8 one week - ARVs to WHO stage only" << std::endl;
-  susceptibles.clear();
-  susceptibles.resize(simulations);
+  std::cout << "Testing E8 half-year - ARVs to WHO stage only" << std::endl;
+  measures.clear();
+  measures.resize(simulations);
   sim::Simulation(sim::Options()
   		  .events({sim::advanceTimeEvent
   			, calcVariablesEvent
   			, arvsStochastic})
-  		  .afterEachSimulation([&susceptibles](sim::Simulation &s) {
+  		  .afterEachSimulation([&measures](sim::Simulation &s) {
   		      unsigned on_arvs =
   			count_if(s.agents.begin(), s.agents.end(),
   				 [](const sim::Agent *a) {
   				   const HIVAgent *b = (HIVAgent *) a;
   				   return b->hiv == 5;
   				 });
-		      susceptibles[s.simulation_num] = on_arvs;
+		      measures[s.simulation_num - 1] = on_arvs;
   		    })
   		  .allAgentsCreate(createDeterministicAgents)
   		  .timeAdjust("ARV_RATE", 1.0, 0, 1, sim::PROBABILITY)
   		  .parameter("ARV_RATE", {0.0, 0.0, 0.0, 0.0, 0.1} )
   		  .parameter("NUM_AGENTS", {1000.0} )
-  		  .parameter("TIME_STEP", {sim::WEEK } )
+  		  .parameter("TIME_STEP", {0.5 } )
   		  .parameter("HIV_PREVALENCE", {0.0, 0.0, 0.0, 0.0} )
   		  .parameter("HIV_PREVALENCE_ARVS", {0.5} )
   		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
   		  .parameter("NUM_SIMULATIONS", {simulations})
   		  .parameter("INITIAL_AGE", {15.0} )).simulate();
-  TESTRANGE(t, sim::mean(susceptibles), 55, 65, "Mean of stochastic run.");
-  DEBUG(sim::mean(susceptibles));
+  TESTRANGE(t, sim::mean(measures), 55, 65, "Mean of stochastic run.");
+
+  std::cout << "Testing E8 year - WHO stage only to ARVs" << std::endl;
+  measures.clear();
+  measures.resize(simulations);
+  sim::Simulation(sim::Options()
+  		  .events({sim::advanceTimeEvent
+  			, calcVariablesEvent
+  			, arvsStochastic})
+  		  .afterEachSimulation([&measures](sim::Simulation &s) {
+  		      unsigned on_arvs =
+  			count_if(s.agents.begin(), s.agents.end(),
+  				 [](const sim::Agent *a) {
+  				   const HIVAgent *b = (HIVAgent *) a;
+  				   return b->hiv == 5;
+  				 });
+		      measures[s.simulation_num - 1] = on_arvs;
+  		    })
+  		  .allAgentsCreate(createDeterministicAgents)
+  		  .timeAdjust("ARV_RATE", 1.0, 0, 1, sim::PROBABILITY)
+  		  .parameter("ARV_RATE", {0.1, 0.2, 0.3, 0.5, 0.0} )
+  		  .parameter("NUM_AGENTS", {1000.0} )
+  		  .parameter("TIME_STEP", { sim::YEAR } )
+  		  .parameter("HIV_PREVALENCE", {0.1, 0.2, 0.3, 0.1} )
+  		  .parameter("HIV_PREVALENCE_ARVS", {0.1} )
+  		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+  		  .parameter("NUM_SIMULATIONS", {simulations})
+  		  .parameter("INITIAL_AGE", {15.0} )).simulate();
+  TESTRANGE(t, sim::mean(measures), 770, 792, "Mean of stochastic run.");
+
+  std::cout << "Testing E9 - one year" << std::endl;
+  measures.clear();
+  measures.resize(simulations);
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
+			, increasePopulationStochastic})
+  		  .afterEachSimulation([&measures](sim::Simulation &s) {
+		      measures[s.simulation_num - 1] = s.agents.size();
+  		    })
+		  .agentCreate(create_hiv_agent)
+		  .timeAdjust("GROWTH", 1.0, 0, 1, sim::PROBABILITY)
+		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("TIME_STEP", {1.0} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("GROWTH", {0.01} )
+		  .parameter("RISK_SUSCEPTIBLE", {0.0} )
+		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE_STDEV", {0.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("NUM_SIMULATIONS", {simulations})
+		  .parameter("PREVALENCE", {0.0} )).simulate();
+  TESTRANGE(t, sim::mean(measures), 1205, 1235, "Mean of stochastic run.");
+
+  std::cout << "Testing E9 - half year" << std::endl;
+  measures.clear();
+  measures.resize(simulations);
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
+			, increasePopulationStochastic})
+  		  .afterEachSimulation([&measures](sim::Simulation &s) {
+		      measures[s.simulation_num - 1] = s.agents.size();
+  		    })
+		  .agentCreate(create_hiv_agent)
+		  .timeAdjust("GROWTH", 1.0, 0, 1, sim::PROBABILITY)
+		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("TIME_STEP", {0.5} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("GROWTH", {0.01} )
+		  .parameter("RISK_SUSCEPTIBLE", {0.0} )
+		  .parameter("RISK_SUSCEPTIBLE_STDEV", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS", {0.0} )
+		  .parameter("RISK_UNINFECTIOUS_STDEV", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE", {0.0} )
+		  .parameter("PARTNER_FORMATION_RATE_STDEV", {0.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("NUM_SIMULATIONS", {simulations})
+		  .parameter("PREVALENCE", {0.0} )).simulate();
+  TESTRANGE(t, sim::mean(measures), 1205, 1235, "Mean of stochastic run.");
+
+  // Test E10
+  std::cout << "Testing E10 time step year" << std::endl;
+  measures.clear();
+  measures.resize(simulations);
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
+			, diseaseProgressionStochastic})
+		  .afterEachSimulation([&measures](sim::Simulation &s) {
+		      unsigned stage_1 =
+			count_if(s.agents.begin(), s.agents.end(),
+				 [](const sim::Agent *a) {
+				   const HIVAgent *b = (HIVAgent *) a;
+				   return b->hiv == 1;
+				 });
+		      measures[s.simulation_num - 1] = stage_1;
+		    })
+		  .agentCreate(create_hiv_agent)
+		  .timeAdjust("DISEASE_CHANGE_RATE", 1.0, 0, 1,
+			      sim::PROBABILITY)
+		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("DISEASE_CHANGE_RATE", {0.1, 0.2, 0.3} )
+		  .parameter("TIME_STEP", {1.0 } )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("HIV_PREVALENCE", {1.0, 0.0, 0.0, 0.0} )
+		  .parameter("NUM_YEARS", {4})
+		  .parameter("NUM_SIMULATIONS", {simulations})
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )).simulate();
+  TESTRANGE(t, sim::mean(measures), 654, 659, "Mean of stochastic run.");
+
+  std::cout << "Testing E10 time step half-year" << std::endl;
+  measures.clear();
+  measures.resize(simulations);
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
+			, diseaseProgressionStochastic})
+		  .afterEachSimulation([&measures](sim::Simulation &s) {
+		      unsigned stage_1 =
+			count_if(s.agents.begin(), s.agents.end(),
+				 [](const sim::Agent *a) {
+				   const HIVAgent *b = (HIVAgent *) a;
+				   return b->hiv == 1;
+				 });
+		      measures[s.simulation_num - 1] = stage_1;
+		    })
+		  .agentCreate(create_hiv_agent)
+		  .timeAdjust("DISEASE_CHANGE_RATE", 1.0, 0, 1,
+			      sim::PROBABILITY)
+		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("DISEASE_CHANGE_RATE", {0.1, 0.2, 0.3} )
+		  .parameter("TIME_STEP", {0.5} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("HIV_PREVALENCE", {1.0, 0.0, 0.0, 0.0} )
+		  .parameter("NUM_YEARS", {4})
+		  .parameter("NUM_SIMULATIONS", {simulations})
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )).simulate();
+  TESTRANGE(t, sim::mean(measures), 654, 659, "Mean of stochastic run.");
+
 }
 
 
