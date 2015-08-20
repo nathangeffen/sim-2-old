@@ -1,0 +1,6 @@
+*~
+sim
+*.d
+*-dev
+*-rel
+*.csv
