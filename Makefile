@@ -12,9 +12,9 @@ OBJECTS = $(SOURCES:.cc=.o)
 DEPEND =  $(OBJECTS:%.o=%.d)
 EXECUTABLE = sim-$(MODEL)
 
-all: $(SOURCES) $(EXECUTABLE)
+all: $(SOURCES) $(EXECUTABLE)-dev
 
-$(EXECUTABLE): $(OBJECTS)
+$(EXECUTABLE)-dev: $(OBJECTS)
 	$(CXX) $(DEVFLAGS) $(LDFLAGS) $(OBJECTS) -o $(EXECUTABLE)-dev
 
 %.o: %.cc
@@ -24,6 +24,6 @@ release: clean
 	$(CXX) $(RELFLAGS) $(CXXFLAGS) -o $(EXECUTABLE)-rel $(SOURCES)
 
 clean:
-	$(RM) $(EXECUTABLE)-release $(EXECUTABLE)-dev *.o
+	$(RM) $(EXECUTABLE)-rel $(EXECUTABLE)-dev *.o
 
 -include $(DEPEND)
