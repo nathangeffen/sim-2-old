@@ -5,4 +5,5 @@ sim
 *-rel
 *.csv
 *.ods
+*.o
 
