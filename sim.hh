@@ -405,8 +405,11 @@ namespace sim {
     bool circumcised;
     double orientation;
     double riskiness;
-    unsigned num_partners;
-    std::vector<unsigned> partners;
+    double expected_encounters;
+    unsigned max_iteration_encounters;
+    unsigned iteration_encounters;
+    unsigned total_encounters;
+    std::vector<HIVAgent *> partners;
     friend std::ostream& operator<<(std::ostream& os, const HIVAgent& agent)
     {
       os << " ID: " << agent.id << " Birth: " << agent.dob

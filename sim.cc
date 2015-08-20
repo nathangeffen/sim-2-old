@@ -407,8 +407,11 @@ HIVAgent *sim::create_hiv_agent(Context &c)
   }
   a->riskiness = uni(rng);
   a->risk = uni(rng) < c("HIGH_RISK_PROPORTION") ? 1 : 0;
+  a->expected_encounters = a->risk == 0 ?
+    c("NUM_PARTNERSHIPS_LOW") : c("NUM_PARTNERSHIPS_HIGH");
+  a->total_encounters = 0;
   a->orientation = 1.0;
-  a->num_partners = 0;
+
 
   if (uni(rng) < c("PROB_CIRCUMCISED"))
     a->circumcised = true;
