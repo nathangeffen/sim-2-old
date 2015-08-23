@@ -319,10 +319,6 @@ Agent::Agent(Context &c) : context_(c)
   alive = true;
 }
 
-HIVAgent::HIVAgent(Context &c) : Agent(c)
-{
-}
-
 double
 sim::time_correct_linear(const double parameter_prob,
 			 const double parameter_time_period,
@@ -384,40 +380,6 @@ Agent* sim::create_default_agent(Context & c)
   return a;
 }
 
-HIVAgent *sim::create_hiv_agent(Context &c)
-{
-  std::uniform_real_distribution<double> uni;
-  HIVAgent *a = new HIVAgent(c);
-  a->sex = uni(rng) < c("PROB_MALE") ?
-		      MALE : FEMALE;
-  { // dob
-    std::uniform_real_distribution<double>
-      uni_age(c("EARLIEST_BIRTH_DATE"),
-	      c("LATEST_BIRTH_DATE"));
-    a->dob = uni_age(rng);
-  }
-
-  a->cd4 = 1000;
-  a->hiv = 0;
-  if (uni(rng) < c("HIV_PREVALENCE")) {
-    a->hiv = 1;
-    std::uniform_real_distribution<double>
-      uni_age(c("EARLIEST_BIRTH_DATE"),
-	      c("LATEST_BIRTH_DATE"));
-  }
-  a->riskiness = uni(rng);
-  a->risk = uni(rng) < c("HIGH_RISK_PROPORTION") ? 1 : 0;
-  a->expected_encounters = a->risk == 0 ?
-    c("NUM_PARTNERSHIPS_LOW") : c("NUM_PARTNERSHIPS_HIGH");
-  a->total_encounters = 0;
-  a->orientation = 1.0;
-
-
-  if (uni(rng) < c("PROB_CIRCUMCISED"))
-    a->circumcised = true;
-
-  return a;
-}
 
 double sim::numAgents(const Simulation &s)
 {
@@ -447,6 +409,8 @@ Context::set_defaults_not_yet_set()
   set_if_not_set("PROB_CIRCUMCISED", { 0.2 });
   set_if_not_set("NUM_SIMULATIONS", { 1.0 });
   set_if_not_set("SIMULATIONS_PER_THREAD", { 10.0 });
+  set_if_not_set("BETA_DIST_ALPHA", { 2.0 });
+  set_if_not_set("BETA_DIST_BETA", { 2.0 });
   set_if_not_set("THREADED", { 1.0 });
 }
 

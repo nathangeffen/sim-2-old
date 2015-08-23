@@ -362,32 +362,8 @@ namespace sim {
     }
   };
 
-  class HIVAgent : public Agent {
-  public:
-    HIVAgent(Context &c);
-    int hiv;
-    int risk;
-    double hiv_infection_date;
-    double on_arvs_date = 0.0;
-    double cd4;
-    bool circumcised;
-    double orientation;
-    double riskiness;
-    double expected_encounters;
-    unsigned max_iteration_encounters;
-    unsigned iteration_encounters;
-    unsigned total_encounters;
-    std::vector<HIVAgent *> partners;
-    friend std::ostream& operator<<(std::ostream& os, const HIVAgent& agent)
-    {
-      os << " ID: " << agent.id << " Birth: " << agent.dob
-	 << " Death: " << agent.dod
-	 << " HIV: " << agent.hiv << " HIV infection date: "
-	 << agent.hiv_infection_date << " CD4: " << agent.cd4;
-      return os;
-    }
-  };
-  HIVAgent *create_hiv_agent(Context &c);
+
+
 }
 
 ////////////////////

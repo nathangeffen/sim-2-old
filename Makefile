@@ -1,10 +1,10 @@
 CXX = g++
 MODEL = dumb
 
-CXXFLAGS = -pthread -Wall -std=c++11
+CXXFLAGS = -Wall -std=c++11
 DEVFLAGS  = -g -rdynamic
 RELFLAGS = -O3
-LDFLAGS =
+LDFLAGS = -pthread
 
 # the build target executable:
 SOURCES = sim.cc test.cc $(MODEL).cc
@@ -21,7 +21,7 @@ $(EXECUTABLE)-dev: $(OBJECTS)
 	$(CXX) -c $(DEVFLAGS) $(CXXFLAGS)  -MD -MP -MF .${@:.o=.d} $< -o $@
 
 release: clean
-	$(CXX) $(RELFLAGS) $(CXXFLAGS) -o $(EXECUTABLE)-rel $(SOURCES)
+	$(CXX) $(RELFLAGS) $(CXXFLAGS) $(LDFLAGS) -o $(EXECUTABLE)-rel $(SOURCES)
 
 clean:
 	$(RM) $(EXECUTABLE)-rel $(EXECUTABLE)-dev *.o
