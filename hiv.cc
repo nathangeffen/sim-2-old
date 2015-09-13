@@ -105,7 +105,12 @@ public:
   unsigned max_iteration_encounters;
   unsigned iteration_encounters;
   unsigned total_encounters;
+  double cluster_val;
   std::vector<HIVAgent *> partners;
+  inline double cluster()
+  {
+    return riskiness;
+  }
   friend std::ostream& operator<<(std::ostream& os, const HIVAgent& agent)
   {
     os << " ID: " << agent.id << " Birth: " << agent.dob
@@ -706,6 +711,38 @@ HIVAgent *random_sticky_partner(const Simulation &s,
   return partner;
 }
 
+void weighted_shuffle(sim::Simulation & s)
+{
+  std::uniform_real_distribution<double> uni;
+  for (auto & a : s.agents) {
+    HIVAgent *agent = (HIVAgent *) a;
+    agent->cluster_val = agent->cluster() * uni(rng);
+  }
+  std::sort(s.agents.begin(), s.agents.end(),
+	    [](const Agent *a, const Agent *b) {
+	      HIVAgent *a1 = (HIVAgent *) a;
+	      HIVAgent *b1 = (HIVAgent *) b;
+	      return a1->cluster_val > b1->cluster_val;
+	    });
+}
+
+void cluster_shuffle(sim::Simulation &s)
+{
+  size_t clusters = s.context("CLUSTER_SIZE");
+  size_t cluster_size = s.agents.size() / clusters;
+  std::sort(s.agents.begin(), s.agents.end(),
+	    [](const Agent *a, const Agent *b) {
+	      HIVAgent *a1 = (HIVAgent *) a;
+	      HIVAgent *b1 = (HIVAgent *) b;
+	      return a1->cluster() > b1->cluster();
+	    });
+  for (size_t c = 0; c < clusters; ++c) {
+    auto first = c * cluster_size;
+    auto last = first + cluster_size;
+    shuffle(s.agents.begin() + first, s.agents.begin() + last, sim::rng);
+  }
+}
+
 
 /*
  * E12
@@ -727,6 +764,7 @@ HIVAgent *random_sticky_partner(const Simulation &s,
  * partners increase, unless they die, they never decrease.
  */
 
+
 class InfectionRiskRandomMatching
 {
 public:
@@ -738,15 +776,21 @@ public:
 			       HIVAgent *a,
 			       std::vector<Agent *>::const_iterator from,
 			       std::vector<Agent *>::const_iterator to)>
-			      get_partner_func = random_partner)
+			      get_partner_func = random_partner,
+			      std::function<void(sim::Simulation &)>
+			      shuffle_func = [](sim::Simulation &s) {
+				std::shuffle(s.agents.begin(), s.agents.end(),
+					     sim::rng);
+			      })
   {
     get_num_partners_func_ = get_num_partners_func;
     get_partner_func_ = get_partner_func;
+    shuffle_func_ = shuffle_func;
   }
 
   void operator()(sim::Simulation &s)
   {
-    std::shuffle(s.agents.begin(), s.agents.end(), sim::rng);
+    shuffle_func_(s);
 
     // Determine how many times each individual will have sex
     unsigned total = 0, encounters = 0, infections = 0;
@@ -803,7 +847,9 @@ private:
 			    std::vector<Agent *>::const_iterator,
 			    std::vector<Agent *>::const_iterator)>
   get_partner_func_;
+  std::function<void(sim::Simulation &)> shuffle_func_;
 };
+
 
 
 void createDeterministicAgents(Simulation & s)
@@ -844,6 +890,8 @@ void createDeterministicAgents(Simulation & s)
     ( (HIVAgent *) s.agents[i])->risk = 1;
 
 }
+
+
 
 void report(sim::Simulation &s)
 {
@@ -1887,6 +1935,108 @@ void testSti(tst::TestSeries &t)
 		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
 		  .parameter("HIV_PREVALENCE_ARVS", {0.00} )).simulate();
   std::cout << "Infections after: " << measures[0] << std::endl;
+
+  std::cout << "Testing E12 time step one week, poisson, weighted" << std::endl;
+  measures.clear();
+  measures.resize(1);
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
+			, InfectionRiskRandomMatching
+			(poisson_encounters,
+			 SampleKPartners(700,
+					 distance_simple),
+			 weighted_shuffle)})
+		  .beforeEachSimulation([&measures](sim::Simulation &s) {
+		      unsigned stage_1 =
+			count_if(s.agents.begin(), s.agents.end(),
+				 [](const sim::Agent *a) {
+				   const HIVAgent *b = (HIVAgent *) a;
+				   return b->hiv == 1;
+				 });
+		      std::cout << "Infections before: " << stage_1 << std::endl;
+		    })
+		  .afterEachSimulation([&measures](sim::Simulation &s) {
+		      unsigned stage_1 =
+			count_if(s.agents.begin(), s.agents.end(),
+				 [](const sim::Agent *a) {
+				   const HIVAgent *b = (HIVAgent *) a;
+				   return b->hiv == 1;
+				 });
+		      measures[s.simulation_num - 1] = stage_1;
+		    })
+		  .agentCreate(create_hiv_agent)
+		  .timeAdjust("NUM_PARTNERSHIPS_LOW", 1.0, 0, 1,
+			      sim::LINEAR)
+		  .timeAdjust("NUM_PARTNERSHIPS_HIGH", 1.0, 0, 1,
+			      sim::LINEAR)
+		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("TIME_STEP", {sim::WEEK} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("INFECTION_PARAMETERS_TIME", {1.0})
+		  .parameter("RISK_TRANSMISSION_ACT", {0.01} )
+		  .parameter("NUM_PARTNERSHIPS_LOW", {0} )
+		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
+		  .parameter("HIV_PREVALENCE", {0.1, 0.00, 0.00, 0.00} )
+		  .parameter("NUM_SIMULATIONS", {1})
+		  .parameter("NUM_PARTNERSHIPS_LOW", {0} )
+		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
+		  .parameter("HIV_PREVALENCE_ARVS", {0.00} )).simulate();
+  std::cout << "Infections after: " << measures[0] << std::endl;
+
+  std::cout << "Testing E12 time step one week, poisson, cluster" << std::endl;
+  measures.clear();
+  measures.resize(1);
+  sim::Simulation(sim::Options()
+		  .events({sim::advanceTimeEvent
+			, calcVariablesEvent
+			, InfectionRiskRandomMatching
+			(poisson_encounters,
+			 SampleKPartners(700,
+					 distance_simple),
+			 cluster_shuffle)})
+		  .beforeEachSimulation([&measures](sim::Simulation &s) {
+		      unsigned stage_1 =
+			count_if(s.agents.begin(), s.agents.end(),
+				 [](const sim::Agent *a) {
+				   const HIVAgent *b = (HIVAgent *) a;
+				   return b->hiv == 1;
+				 });
+		      std::cout << "Infections before: " << stage_1 << std::endl;
+		    })
+		  .afterEachSimulation([&measures](sim::Simulation &s) {
+		      unsigned stage_1 =
+			count_if(s.agents.begin(), s.agents.end(),
+				 [](const sim::Agent *a) {
+				   const HIVAgent *b = (HIVAgent *) a;
+				   return b->hiv == 1;
+				 });
+		      measures[s.simulation_num - 1] = stage_1;
+		    })
+		  .agentCreate(create_hiv_agent)
+		  .timeAdjust("NUM_PARTNERSHIPS_LOW", 1.0, 0, 1,
+			      sim::LINEAR)
+		  .timeAdjust("NUM_PARTNERSHIPS_HIGH", 1.0, 0, 1,
+			      sim::LINEAR)
+		  .parameter("NUM_AGENTS", {1000.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("TIME_STEP", {sim::WEEK} )
+		  .parameter("INITIAL_AGE", {15.0} )
+		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+		  .parameter("INFECTION_PARAMETERS_TIME", {1.0})
+		  .parameter("RISK_TRANSMISSION_ACT", {0.01} )
+		  .parameter("NUM_PARTNERSHIPS_LOW", {0} )
+		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
+		  .parameter("HIV_PREVALENCE", {0.1, 0.00, 0.00, 0.00} )
+		  .parameter("NUM_SIMULATIONS", {1})
+		  .parameter("CLUSTER_SIZE", {100})
+		  .parameter("NUM_PARTNERSHIPS_LOW", {0} )
+		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
+		  .parameter("HIV_PREVALENCE_ARVS", {0.00} )).simulate();
+  std::cout << "Infections after: " << measures[0] << std::endl;
+
 }
 
 
