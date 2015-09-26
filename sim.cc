@@ -413,7 +413,7 @@ Context::set_defaults_not_yet_set()
 }
 
 double
-Context::operator()(const char * key, size_t i)
+Context::operator()(const char * key, size_t i) const
 {
   if (parameters.find(key) == parameters.end()) {
     std::stringstream ss;
@@ -651,6 +651,8 @@ Simulation::simulate()
   context.set_defaults_not_yet_set();
   context.adjust_parameters_to_time_period();
 
+  num_sims = context("NUM_SIMULATIONS");
+
   if (tracking_on_)
     trackings.reserve(num_sims);
 
@@ -660,8 +662,6 @@ Simulation::simulate()
   if (reporters_)
     for (auto & r : *reporters_)
       r.setSize(num_sims);
-
-  num_sims = context("NUM_SIMULATIONS");
 
   if (context("THREADED")) {
     sim_per_thread = context("SIMULATIONS_PER_THREAD");

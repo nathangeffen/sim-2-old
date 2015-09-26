@@ -151,10 +151,10 @@ namespace sim {
   class Context {
   public:
     void set_defaults_not_yet_set();
-    double operator()(const char * key, size_t i);
-    double operator()(const char * c);
-    double operator()(const std::string & s);
-    double operator()(const std::string &s, size_t i);
+    double operator()(const char * key, size_t i) const;
+    double operator()(const char * c) const;
+    double operator()(const std::string & s) const;
+    double operator()(const std::string &s, size_t i) const;
     void set(const char *parameter, double value);
     void set(const char *parameter, std::vector<double> values);
     void set(const std::string& parameter, std::vector<double> values);
@@ -392,18 +392,19 @@ InvalidParameter::what() const throw()
 ///////////////
 
 inline double
-Context::operator()(const char * c)
+Context::operator()(const char * c) const
 {
   return operator()(c, 0);
 }
 
 inline double
-Context::operator()(const std::string & s) {
+Context::operator()(const std::string & s) const
+{
   return operator()(s, 0);
 }
 
 inline double
-Context::operator()(const std::string &s, size_t i)
+Context::operator()(const std::string &s, size_t i) const
 {
   return operator()(s.c_str(), i);
 }
