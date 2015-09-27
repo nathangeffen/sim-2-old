@@ -213,6 +213,7 @@ namespace sim {
   {
   public:
     Agent(Context &context);
+    virtual ~Agent(){}
     double age(Simulation &s);
     void die(Simulation &s, const std::string& cause);
     unsigned id;
