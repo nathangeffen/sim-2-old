@@ -261,6 +261,9 @@ namespace sim {
 			 individual_agent_create_func);
     Options& allAgentsCreate(std::function<void (Simulation &)>
 			     all_agents_create_func);
+    template<class AgentType>
+    Options& initAgents(const unsigned,
+    			std::function< void(const Simulation &, AgentType *)>);
     Options& beforeAllSimulations(std::function<void(Simulation &)>
 				  before_all_simulations_func);
     Options& beforeEachSimulation(std::function<void(Simulation &)>
@@ -289,6 +292,8 @@ namespace sim {
     std::function<void(Simulation &)> before_all_simulations_func_;
     std::function<void(Simulation &)>  before_each_simulation_func_;
     std::function<void(Simulation &)> after_each_simulation_func_;
+    std::vector< std::pair< unsigned,
+			    std::function<void(Simulation &)> > > init_funcs_;
     Context context_;
     std::vector<Reporter> reporters_;
     bool tracking_on_ = false;
@@ -325,6 +330,7 @@ namespace sim {
     unsigned simulation_num = 0, current_iteration, total_iterations;
     Context context;
     void *user_data = NULL;
+    friend class Options;
   private:
     Events events_;
     Tests tests_;
@@ -336,6 +342,8 @@ namespace sim {
     std::function<void(Simulation &)> before_all_simulations_func_;
     std::function<void(Simulation &)> before_each_simulation_func_;
     std::function<void(Simulation &)> after_each_simulation_func_;
+    std::vector< std::pair< unsigned,
+			    std::function<void(Simulation &)> > > init_funcs_;
     // Potentially slow so only switch on if necess
     bool tracking_on_ = false;
     friend void
@@ -529,6 +537,25 @@ inline Options&
 Options::allAgentsCreate(std::function<void(Simulation &)>
 			 all_agents_create_func)
 { all_agents_create_func_ = all_agents_create_func; return *this; }
+
+template <class AgentType>
+inline Options&
+Options::initAgents(unsigned num_agents,
+		    std::function< void(const Simulation &,
+					AgentType *)> init_func)
+{
+  auto f = [&](Simulation &s)
+     {
+       assert(s.agent_create_func_);
+       Agent* a = s.agent_create_func_(s.context);
+       init_func(s,  (AgentType *) a);
+       s.agents.push_back(a);
+     };
+  init_funcs_.push_back(std::pair<unsigned,
+			std::function< void(Simulation &)> > (num_agents, f));
+  return *this;
+}
+
 inline Options&
 Options::beforeAllSimulations(std::function<void(Simulation &)>
 			      before_all_simulations_func)

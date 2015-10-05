@@ -605,6 +605,7 @@ Simulation::setOptions(const Options & options)
   before_all_simulations_func_ = options.before_all_simulations_func_;
   before_each_simulation_func_ = options.before_each_simulation_func_;
   after_each_simulation_func_ = options.after_each_simulation_func_;
+  init_funcs_ = options.init_funcs_;
   context = options.context_;
   if (options.reporters_.size()) {
     reporters_ = new std::vector<Reporter>;
@@ -621,13 +622,20 @@ Simulation::init(unsigned seed)
   time_step = context("TIME_STEP");
   current_date = context("START_DATE");
   total_iterations = context("ITERATIONS");
-  if (create_all_agents_func_)
+  if (create_all_agents_func_) {
     create_all_agents_func_(*this);
-  else
+  } else if (init_funcs_.size()) {
+    for (auto & p : init_funcs_) {
+      for (unsigned i = 0; i < p.first; ++i)
+	p.second(*this);
+    }
+  } else {
+    assert(agent_create_func_);
     for (unsigned i = 0; i < context("NUM_AGENTS"); ++i) {
       Agent *a = agent_create_func_(context);
       agents.push_back(a);
     }
+  }
 }
 
 

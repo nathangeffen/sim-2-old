@@ -2210,6 +2210,82 @@ void testSti(tst::TestSeries &t)
   		  .parameter("HIV_PREVALENCE_ARVS", {0.00} )).simulate();
   TESTRANGE(t, fabs( (double) 130 - (double) risk_reduction),
   	    0, 15, "No large deviation by cluster agents");
+
+  std::cout << "Testing E11, E12 time step one week, poisson, cluster, "
+  	    << "optimized sophisticated distance, risk reduction, "
+	    << "with initialization" << std::endl;
+  sim::Simulation(sim::Options()
+  		  .events({sim::advanceTimeEvent
+  			, calcVariablesEvent
+  			, reduceRiskiness
+  			, InfectionRiskRandomMatching
+  			(poisson_encounters,
+  			 SampleKPartners(250,
+  					 partner_distance_optimized),
+  			 cluster_shuffle)})
+  		  .beforeAllSimulations(setDefaultParameters)
+		  .beforeEachSimulation([&](sim::Simulation &s) {
+		      unsigned num_hiv = 0, num_male = 0;
+		      TESTEQ(t, s.agents.size(), 2000, "Expected num agents");
+		      for (auto & agent : s.agents) {
+			HIVAgent *a = (HIVAgent *) agent;
+			if (a->hiv == 1) ++num_hiv;
+			if (a->sex == MALE) ++num_male;
+		      }
+		      TESTEQ(t, num_hiv, 1000, "Expected HIV");
+		      TESTEQ(t, num_male, 1500, "Expected male");
+		    })
+  		  .afterEachSimulation([&](sim::Simulation &s) {
+  		      unsigned stage_1 =
+  			count_if(s.agents.begin(), s.agents.end(),
+  				 [](const sim::Agent *a) {
+  				   const HIVAgent *b = (HIVAgent *) a;
+  				   return b->hiv == 1;
+  				 });
+  		      risk_reduction = stage_1;
+  		    })
+  		  .agentCreate(create_hiv_agent)
+		  .initAgents<HIVAgent>(500, [](const Simulation &s, HIVAgent *a)
+			      {
+				a->hiv = 1;
+				a->sex = MALE;
+			      })
+		  .initAgents<HIVAgent>(500, [](const Simulation &s, HIVAgent *a)
+			      {
+				a->hiv = 1;
+				a->sex = FEMALE;
+			      })
+		  .initAgents<HIVAgent>(1000,
+					[](const Simulation &s, HIVAgent *a)
+			      {
+				a->hiv = 0;
+				a->sex = MALE;
+			      })
+  		  .timeAdjust("NUM_PARTNERSHIPS_LOW", 1.0, 0, 1,
+  			      sim::LINEAR)
+  		  .timeAdjust("NUM_PARTNERSHIPS_HIGH", 1.0, 0, 1,
+  			      sim::LINEAR)
+  		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+  		  .parameter("TIME_STEP", {sim::WEEK} )
+  		  .parameter("HIGH_RISK_PROPORTION", {0.5 } )
+  		  .parameter("INFECTION_PARAMETERS_TIME", {1.0})
+  		  .parameter("RISK_TRANSMISSION_ACT", {0.01} )
+  		  .parameter("NUM_PARTNERSHIPS_LOW", {0} )
+  		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
+  		  .parameter("HIV_PREVALENCE", {0.1, 0.00, 0.00, 0.00} )
+  		  .parameter("NUM_SIMULATIONS", {1})
+  		  .parameter("CLUSTER_SIZE", {100})
+  		  .parameter("NUM_PARTNERSHIPS_LOW", {0} )
+  		  .parameter("NUM_PARTNERSHIPS_HIGH", {6} )
+  		  .parameter("AGE_RISK_REDUCTION", {32.0})
+  		  .timeAdjust("RISK_REDUCTION", 1.0, 0, 1,
+  			      sim::PROBABILITY)
+  		  .parameter("RISK_REDUCTION", {0.2})
+  		  .parameter("AGE_ENCOUNTERS_REDUCTION", {35.0})
+  		  .timeAdjust("ENCOUNTERS_REDUCTION", 1.0, 0, 1,
+  			      sim::PROBABILITY)
+  		  .parameter("ENCOUNTERS_REDUCTION", {0.1})
+  		  .parameter("HIV_PREVALENCE_ARVS", {0.00} )).simulate();
 }
 
 
